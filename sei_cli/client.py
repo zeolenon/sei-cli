@@ -2087,55 +2087,6 @@ class SEIClient:
         
         return parse_units_switch_page(r.text, base_url=self._sei_url(""))
 
-    def switch_unit(self, keyword: str) -> SystemStatus:
-        """Switch active unit. Keyword matches against sigla or descricao.
-        
-        The unit.link stores the unit ID (not a URL). We POST the switch form
-        with selInfraUnidades=<unit_id> to replicate the JS selecionarUnidade().
-        
-        After switching, we need a fresh login because the infra_hash changes.
-        """
-        # Always get a fresh control page for valid switch URL
-        html = self._fresh_control()
-        switch_url = parse_unit_switch_link(html, self._sei_url(""))
-        if not switch_url:
-            raise RuntimeError("Link de troca de unidade não encontrado")
-        
-        r = self._get(switch_url)
-        units = parse_units_switch_page(r.text, self._sei_url(""))
-        form_action, hiddens = parse_unit_switch_form(r.text)
-        
-        kw = keyword.lower()
-        target = None
-        for u in units:
-            if kw in u.sigla.lower() or kw in u.descricao.lower():
-                target = u
-                break
-        
-        if not target or not target.link:
-            available = ", ".join(u.sigla for u in units)
-            raise RuntimeError(f"Unidade '{keyword}' não encontrada. Disponíveis: {available}")
-        
-        # POST form with selInfraUnidades (the key JS creates dynamically)
-        post_url = urljoin(str(r.url), form_action) if form_action else switch_url
-        data = {**hiddens, "selInfraUnidades": target.link}
-
-        r2 = self._post(post_url, data)
-
-        # After switching, the response is a confirmation page, not the control
-        # page. We need to explicitly load the control page to get process lists.
-        status = parse_system_status(r2.text)
-        self._current_unit_id = target.link
-        control_url = self._sei_url(
-            f"controlador.php?acao=procedimento_controlar"
-            f"&infra_sistema=100000100&infra_unidade_atual={target.link}"
-        )
-        rc = self._get(control_url)
-        self._control_html = rc.text
-        self._menu_links = parse_menu_links(rc.text, self._sei_url(""))
-        self._persist_session()
-        return parse_system_status(rc.text)
-
     # --- Search ---
 
     def search(self, query: str) -> str:
@@ -2895,17 +2846,64 @@ class SEIClient:
     def search_units(
         self, keyword: str, orgao: str = "0"
     ) -> list[tuple[str, str]]:
-        """Search for SEI units by keyword using the enviar AJAX endpoint.
+        """Search for SEI units by keyword.
 
-        Returns list of (unit_id, description) tuples.
-        Requires an active enviar form page (call from enviar_processo context).
+        Hybrid strategy:
+        1. Exact match in UNIT_IDS (normalized, case-insensitive).
+        2. Partial match in UNIT_IDS (keyword contained in name).
+        3. Fallback: SEI AJAX autocomplete endpoint (requires active session).
+
+        Returns list of (unit_id, name) tuples, exact matches first.
         """
-        import re as _re
+        import unicodedata
 
-        # We need a valid process page to get the AJAX hash.
-        # This is a lightweight helper — callers should have already
-        # loaded the enviar form.
-        return []  # Placeholder — actual search done inline in enviar_processo
+        def _norm(s: str) -> str:
+            return unicodedata.normalize("NFD", s.lower()).encode("ascii", "ignore").decode()
+
+        kw = _norm(keyword)
+        exact: list[tuple[str, str]] = []
+        partial: list[tuple[str, str]] = []
+
+        for name, uid in self.UNIT_IDS.items():
+            norm_name = _norm(name)
+            if kw == norm_name:
+                exact.append((uid, name))
+            elif kw in norm_name:
+                partial.append((uid, name))
+
+        results = exact + partial
+        if not results:
+            results = self._search_units_ajax(keyword, orgao)
+        return results
+
+    def _search_units_ajax(
+        self, keyword: str, orgao: str = "0"
+    ) -> list[tuple[str, str]]:
+        """Query SEI's unit autocomplete endpoint as a fallback.
+
+        The endpoint (controlador_ajax.php?acao=unidade_pesquisar) requires
+        a valid infra_hash from an active tramitar/enviar form. Returns empty
+        list if the session is unavailable or the endpoint is unreachable.
+        """
+        try:
+            url = self._sei_url(
+                "sei/controlador_ajax.php?acao=unidade_pesquisar"
+                "&infra_sistema=100000100"
+                f"&id_orgao_unidade={orgao}"
+            )
+            r = self._post(url, data={"str_pesquisa": keyword, "sin_ativo": "S"})
+            if r.status_code != 200:
+                return []
+            # Response is HTML <option value="ID">NAME</option> elements.
+            from bs4 import BeautifulSoup as _BS
+            soup = _BS(r.text, "lxml")
+            return [
+                (opt["value"], opt.get_text(strip=True))
+                for opt in soup.find_all("option")
+                if opt.get("value")
+            ]
+        except Exception:
+            return []
 
     def tramitar_processo(
         self,

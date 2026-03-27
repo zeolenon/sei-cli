@@ -453,21 +453,48 @@ def concluir_cmd(processos: tuple[str, ...], unit: str | None, as_json: bool) ->
         console.print(f"\n[bold]{total}/{len(ids)} processos concluídos[/bold]")
 
 
-@cli.command("units")
+@cli.group("units", invoke_without_command=True)
 @click.option("--json", "as_json", is_flag=True, help="Saída JSON")
-def units_cmd(as_json: bool) -> None:
+@click.pass_context
+def units_cmd(ctx: click.Context, as_json: bool) -> None:
+    """Listar ou pesquisar unidades SEI."""
+    if ctx.invoked_subcommand is None:
+        with SEIClient() as client:
+            units = client.list_units()
+
+        if as_json:
+            _emit([asdict(x) for x in units], True)
+            return
+
+        table = Table(title="Unidades")
+        table.add_column("Sigla")
+        table.add_column("Descrição")
+        for unit in units:
+            table.add_row(unit.sigla, unit.descricao)
+        console.print(table)
+
+
+@units_cmd.command("search")
+@click.argument("query")
+@click.option("--json", "as_json", is_flag=True, help="Saída JSON")
+def units_search_cmd(query: str, as_json: bool) -> None:
+    """Pesquisar unidades por sigla ou nome."""
     with SEIClient() as client:
-        units = client.list_units()
+        results = client.search_units(query)
 
     if as_json:
-        _emit([asdict(x) for x in units], True)
+        _emit([{"id": uid, "name": name} for uid, name in results], True)
         return
 
-    table = Table(title="Unidades")
-    table.add_column("Sigla")
-    table.add_column("Descrição")
-    for unit in units:
-        table.add_row(unit.sigla, unit.descricao)
+    if not results:
+        console.print(f"[yellow]Nenhuma unidade encontrada para '{query}'.[/yellow]")
+        return
+
+    table = Table(title=f"Unidades: {query}")
+    table.add_column("ID")
+    table.add_column("Nome")
+    for uid, name in results:
+        table.add_row(uid, name)
     console.print(table)
 
 
