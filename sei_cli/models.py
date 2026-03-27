@@ -147,6 +147,7 @@ class TreeDocument:
     src_url: str | None = None         # documento_visualizar or documento_download_anexo
     html_content: str | None = None    # inline HTML (for docs with viewer info)
     sei_number: str | None = None      # SEI document number from title
+    assinado: bool = False             # True if doc icon indicates signed status
 
 
 @dataclass(slots=True)

@@ -114,12 +114,15 @@ def processes_cmd(unit: str | None, as_json: bool) -> None:
 @click.option("--unit", default=None, help="Unidade SEI (trocar antes)")
 @click.option("--json", "as_json", is_flag=True, help="Saída JSON")
 def process_cmd(numero: str, unit: str | None, as_json: bool) -> None:
-    """Listar documentos de um processo pelo id_procedimento ou número SEI."""
+    """Listar documentos de um processo pelo id_procedimento ou número SEI.
+
+    Uses get_full_document_tree() which automatically expands lazy-loaded
+    folders, returning ALL documents including those inside nested folders.
+    """
     with SEIClient() as client:
         if unit:
             client.switch_unit(unit)
         # Se parece número de processo (tem ponto/barra), resolve via search
-        process_html = None
         if "." in numero or "/" in numero:
             import re as _re
             html = client.search(numero)
@@ -128,10 +131,9 @@ def process_cmd(numero: str, unit: str | None, as_json: bool) -> None:
                 raise SystemExit(1)
             id_proc_m = _re.search(r"id_procedimento=(\d+)", html)
             id_proc = id_proc_m.group(1) if id_proc_m else numero
-            process_html = html
         else:
             id_proc = numero
-        docs = client.get_process_documents(id_proc, process_html=process_html)
+        docs = client.get_full_document_tree(id_proc)
 
     if as_json:
         _emit([asdict(d) for d in docs], True)
@@ -140,14 +142,16 @@ def process_cmd(numero: str, unit: str | None, as_json: bool) -> None:
     table = Table(title=f"Processo {numero} ({len(docs)} documentos)")
     table.add_column("ID")
     table.add_column("Nº SEI")
+    table.add_column("Nome")
     table.add_column("Tipo")
-    table.add_column("Assinado")
+    table.add_column("Pasta")
     for doc in docs:
         table.add_row(
             doc.id_documento or "-",
-            doc.numero,
+            doc.sei_number or "-",
             doc.nome,
-            "✅" if doc.assinado else "❌",
+            doc.tipo,
+            doc.parent_folder or "-",
         )
     console.print(table)
 
@@ -255,23 +259,24 @@ def goto_cmd(numero: str, as_json: bool, do_read: bool, unit: str | None) -> Non
                 id_proc_m = re.search(r"id_procedimento=(\d+)", html)
                 id_proc = id_proc_m.group(1) if id_proc_m else "?"
                 if as_json:
-                    docs = client.get_process_documents(id_proc, process_html=html) if id_proc != "?" else []
+                    docs = client.get_full_document_tree(id_proc) if id_proc != "?" else []
                     _emit({
                         "tipo": "processo",
                         "numero": numero,
                         "id_procedimento": id_proc,
-                        "documentos": [{"id": d.id_documento, "nome": d.nome, "tipo": d.tipo} for d in docs],
+                        "documentos": [{"id": d.id_documento, "nome": d.nome, "tipo": d.tipo, "sei_number": d.sei_number} for d in docs],
                     }, True)
                 else:
                     console.print(f"[green]✅ Processo {numero}[/green] (id_procedimento={id_proc})")
                     if id_proc != "?":
-                        docs = client.get_process_documents(id_proc, process_html=html)
+                        docs = client.get_full_document_tree(id_proc)
                         table = Table(title=f"Documentos ({len(docs)})")
                         table.add_column("ID")
+                        table.add_column("Nº SEI")
                         table.add_column("Nome")
                         table.add_column("Tipo")
                         for d in docs:
-                            table.add_row(d.id_documento, d.nome, d.tipo)
+                            table.add_row(d.id_documento, d.sei_number or "-", d.nome, d.tipo)
                         console.print(table)
             else:
                 console.print(f"[red]❌ Processo {numero} não encontrado[/red]")

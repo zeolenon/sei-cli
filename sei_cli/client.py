@@ -422,6 +422,10 @@ class SEIClient:
     ) -> list[Document]:
         """Get document tree for a process by parsing the JS tree.
 
+        .. deprecated::
+            Use :meth:`get_full_document_tree` instead, which automatically
+            expands lazy-loaded folders and returns richer TreeDocument objects.
+
         Args:
             id_procedimento: The internal SEI procedure ID.
             process_html: If provided, skip navigation and extract the
@@ -4374,28 +4378,59 @@ class SEIClient:
     def _navigate_to_arvore(self, id_procedimento: str) -> str | None:
         """Navigate to a process and return the arvore (tree) HTML.
 
-        Uses direct URL approach (same as _open_process_page) —
-        works regardless of whether the process is in the current unit's list.
+        Strategy (fast → slow):
+        1. Direct URL with id_procedimento (works when session has valid hash)
+        2. Via _navigate_to_process_page (uses hashed links from control page)
+        3. Via search() — pesquisa rápida generates its own valid hashes
+
+        Works regardless of whether the process is in the current unit's list.
         """
         self._ensure_session()
+
+        # Strategy 1: Direct URL
         url = self._sei_url(
             f"controlador.php?acao=procedimento_trabalhar"
             f"&id_procedimento={id_procedimento}"
         )
         rp = self._get(url)
 
-        if "login.php" in str(rp.url) or "pwdSenha" in rp.text:
-            return None
+        if "login.php" not in str(rp.url) and "pwdSenha" not in rp.text:
+            psoup = BeautifulSoup(rp.text, "lxml")
+            iframe = psoup.find("iframe", {"name": "ifrArvore"})
+            if iframe and iframe.get("src"):
+                arvore_url = urljoin(self._sei_url(""), iframe["src"])
+                ra = self._get(arvore_url)
+                self._control_html = None
+                return ra.text
 
-        psoup = BeautifulSoup(rp.text, "lxml")
-        iframe = psoup.find("iframe", {"name": "ifrArvore"})
-        if not iframe or not iframe.get("src"):
-            return None
+        # Strategy 2: Via _navigate_to_process_page (uses hashed links)
+        try:
+            psoup = self._navigate_to_process_page(id_procedimento)
+            if psoup is not None:
+                iframe = psoup.find("iframe", {"name": "ifrArvore"})
+                if iframe and iframe.get("src"):
+                    arvore_url = urljoin(self._sei_url(""), iframe["src"])
+                    ra = self._get(arvore_url)
+                    self._control_html = None
+                    return ra.text
+        except Exception:
+            pass
 
-        arvore_url = urljoin(self._sei_url(""), iframe["src"])
-        ra = self._get(arvore_url)
-        self._control_html = None
-        return ra.text
+        # Strategy 3: Via search() — pesquisa rápida
+        try:
+            result_html = self.search(id_procedimento)
+            if "ifrArvore" in result_html:
+                ssoup = BeautifulSoup(result_html, "lxml")
+                iframe = ssoup.find("iframe", {"name": "ifrArvore"})
+                if iframe and iframe.get("src"):
+                    arvore_url = urljoin(self._sei_url(""), iframe["src"])
+                    ra = self._get(arvore_url)
+                    self._control_html = None
+                    return ra.text
+        except Exception:
+            pass
+
+        return None
 
     def _find_in_acompanhamento(self, id_procedimento: str) -> str | None:
         """Search for a process link in Acompanhamento Especial."""

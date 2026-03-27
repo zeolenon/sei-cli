@@ -319,6 +319,20 @@ def parse_expanded_folder(content: str, base_url: str = '') -> list[TreeDocument
         # Clean HTML tags from name
         nome_clean = re.sub(r'<[^>]+>', '', node.get('nome', '')).strip()
 
+        # Ensure sei_number is populated: try multiple patterns
+        sei_number = node.get('sei_number')
+        if not sei_number:
+            # Try extracting from id field (often the numeric doc id IS the sei_number)
+            doc_id = node.get('id', '')
+            if doc_id and doc_id.isdigit() and len(doc_id) >= 7:
+                sei_number = doc_id
+            # Try extracting from label
+            if not sei_number:
+                label = node.get('label', '')
+                m = re.search(r'(\d{7,})', label)
+                if m:
+                    sei_number = m.group(1)
+
         docs.append(TreeDocument(
             id_documento=node.get('id', ''),
             nome=nome_clean,
@@ -327,7 +341,7 @@ def parse_expanded_folder(content: str, base_url: str = '') -> list[TreeDocument
             arvore_url=urljoin(base_url, node['arvore_url']) if node.get('arvore_url') else None,
             src_url=urljoin(base_url, node['src_url']) if node.get('src_url') else None,
             html_content=node.get('html_content'),
-            sei_number=node.get('sei_number'),
+            sei_number=sei_number,
         ))
 
     return docs
