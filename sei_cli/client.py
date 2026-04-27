@@ -5590,10 +5590,13 @@ class SEIClient:
             return unit_msg.group(1).strip()
 
         # Secondary: documents with about:blank + UNIDADE_GERADORA
+        # Only treat as restriction if the current unit cannot act on the process.
+        # If linkIncluirDocumento is present, the process is in the current unit's
+        # inbox and foreign about:blank docs are expected — not a true restriction.
         has_blank_docs = bool(
             re.search(r'"about:blank","ifrConteudoVisualizacao"', arvore_html)
         )
-        if has_blank_docs:
+        if has_blank_docs and "linkIncluirDocumento" not in arvore_html:
             # Extract the unit sigla from UNIDADE_GERADORA actions (last param)
             ug_siglas = re.findall(
                 r'new infraArvoreAcao\("UNIDADE_GERADORA"[^)]*,"([^"]+)"\)',
@@ -5729,15 +5732,21 @@ class SEIClient:
     def _is_process_inaccessible(self, arvore_html: str) -> bool:
         """Check if documents in the arvore are inaccessible (about:blank URLs).
 
-        Returns True if ANY document has about:blank URL, indicating the
-        current unit can't view the documents.
+        Returns True if ANY document has about:blank URL AND the current unit
+        cannot create documents. If the unit has linkIncluirDocumento, the
+        process is in its inbox and it can act — not truly inaccessible.
         """
-        return bool(
+        has_blank = bool(
             re.search(
                 r'new infraArvoreNo\("DOCUMENTO",[^)]*"about:blank"',
                 arvore_html,
             )
         )
+        if not has_blank:
+            return False
+        # Process is in current unit's inbox — can create even if can't read foreign docs
+        can_act = "linkIncluirDocumento" in arvore_html
+        return not can_act
 
     @contextlib.contextmanager
     def _auto_unit_switch(
@@ -5797,10 +5806,11 @@ class SEIClient:
 
         # Check access and switch
         if not self._can_switch_to(required):
-            raise RuntimeError(
-                f"Processo requer unidade '{required}' mas você não tem acesso. "
-                f"Unidades disponíveis: {', '.join(u.sigla for u in self.list_units())}"
-            )
+            # Secondary heuristic may false-positive for forwarded processes where
+            # the current unit can still act (e.g., add documents). Proceed with
+            # current unit and let SEI reject if the operation truly isn't allowed.
+            yield None
+            return
 
         self.switch_unit(required)
         try:
@@ -5944,6 +5954,46 @@ class SEIClient:
         self._control_html = None
         return None
 
+    def _build_arvore_visualizar_url(
+        self, id_documento: str, id_procedimento: str
+    ) -> str | None:
+        """Construct an arvore_visualizar URL using the current session's unit hash.
+
+        Used when the document appears as about:blank in the tree (tree rendered in
+        a different unit's context). Navigates fresh to the process page to extract
+        a valid infra_hash and infra_unidade_atual for the current unit.
+        """
+        url = self._sei_url(
+            f"controlador.php?acao=procedimento_trabalhar"
+            f"&id_procedimento={id_procedimento}"
+        )
+        rp = self._get(url)
+        psoup = BeautifulSoup(rp.text, "lxml")
+        iframe = psoup.find("iframe", {"name": "ifrArvore"})
+        if not iframe or not iframe.get("src"):
+            return None
+
+        arvore_src = iframe["src"]
+        # Extract infra_unidade_atual and infra_hash from the arvore src URL
+        unit_m = re.search(r"infra_unidade_atual=(\d+)", arvore_src)
+        hash_m = re.search(r"infra_hash=([a-f0-9]+)", arvore_src)
+        if not unit_m or not hash_m:
+            return None
+
+        infra_unidade_atual = unit_m.group(1)
+        infra_hash = hash_m.group(1)
+
+        doc_url = (
+            f"controlador.php?acao=arvore_visualizar"
+            f"&acao_origem=arvore_inicializar"
+            f"&id_procedimento={id_procedimento}"
+            f"&id_documento={id_documento}"
+            f"&infra_sistema=100000100"
+            f"&infra_unidade_atual={infra_unidade_atual}"
+            f"&infra_hash={infra_hash}"
+        )
+        return urljoin(self._sei_url(""), doc_url)
+
     def _get_editor_url(
         self, id_documento: str, id_procedimento: str
     ) -> str | None:
@@ -5968,9 +6018,22 @@ class SEIClient:
             )
             doc_match = doc_pattern.search(arvore_html)
             if not doc_match:
-                return None
-
-            doc_url = urljoin(self._sei_url(""), doc_match.group())
+                # Document may be in a lazy-loaded folder — expand all and retry
+                all_docs = self.get_full_document_tree(id_procedimento, expand_all=True)
+                tree_doc = next(
+                    (d for d in all_docs if d.id_documento == id_documento), None
+                )
+                if tree_doc and tree_doc.arvore_url and "about:blank" not in tree_doc.arvore_url:
+                    doc_url = tree_doc.arvore_url
+                else:
+                    # arvore_url is about:blank — the tree is rendered in a different
+                    # unit's context. Try to construct a fresh arvore_visualizar URL
+                    # using the current session's unit hash from the process page.
+                    doc_url = self._build_arvore_visualizar_url(id_documento, id_procedimento)
+                    if not doc_url:
+                        return None
+            else:
+                doc_url = urljoin(self._sei_url(""), doc_match.group())
             rd = self._get(doc_url)
 
             # Extract linkEditarConteudo
