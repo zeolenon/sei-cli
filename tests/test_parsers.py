@@ -4,6 +4,7 @@ from __future__ import annotations
 from sei_cli.parsers import (
     parse_block_documents,
     parse_blocks,
+    parse_acompanhamento_especial,
     parse_expanded_folder,
     parse_marcador_form,
     parse_marcadores_list,
@@ -15,6 +16,29 @@ from sei_cli.parsers import (
 
 
 BASE = "https://sei.rn.gov.br/sei/"
+
+
+def test_parse_acompanhamento_especial_keeps_description_and_markers() -> None:
+    content = """
+    <table id="tblAcompanhamentos"><tbody>
+      <tr class="infraTrClara">
+        <td></td><td>
+          <a aria-label="Marcador / Material / Escadas emprestadas" href="x?id_acompanhamento=77"></a>
+        </td>
+        <td><a title="Material: Material" href="controlador.php?acao=procedimento_trabalhar&amp;id_procedimento=123">08810254.000239/2025-78</a></td>
+        <td>11199338702</td><td>02/09/2026 10:00:00</td>
+        <td>Material / Logística</td><td>Escada emprestada do quartel para o quartel em Apodi; conferir PDF.</td><td></td>
+      </tr>
+    </tbody></table>
+    """
+
+    records = parse_acompanhamento_especial(content, BASE)
+
+    assert len(records) == 1
+    assert records[0].numero == "08810254.000239/2025-78"
+    assert records[0].descricao.startswith("Escada emprestada")
+    assert records[0].marcadores == ["Marcador / Material / Escadas emprestadas"]
+    assert records[0].id_acompanhamento == "77"
 
 
 def test_parse_status(controle_html: str) -> None:

@@ -4578,7 +4578,7 @@ def test_cli_version_reports_package_version() -> None:
     result = CliRunner().invoke(cli, ["--version"])
 
     assert result.exit_code == 0
-    assert "0.7.1" in result.output
+    assert "0.8.0" in result.output
 
 
 def test_block_compatibility_command_delegates_to_signature_block_read(monkeypatch) -> None:

@@ -28,6 +28,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from sei_cli import auth
+from sei_cli.document_extraction import extract_document_content
 
 
 def _sanitize_for_iso_8859_1(text: str) -> str:
@@ -130,7 +131,7 @@ def _serialize_lupa_select_hidden(select: Any) -> str:
 
 from sei_cli.config import load_credentials, orgao_to_value, SESSION_PATH
 from sei_cli.models import (
-    Block, BlockDocument, Document, DocumentCreated, DocumentType,
+    AcompanhamentoEspecial, Block, BlockDocument, Document, DocumentCreated, DocumentType,
     EditorSection, Marcador, Process, ProcessHistoryEntry, ProcessList, SystemStatus,
     TramitarForm, TreeDocument, TreeFolder, Unit,
 )
@@ -142,6 +143,7 @@ from sei_cli.relatorio_parser import (
 )
 from sei_cli.parsers import (
     parse_block_documents,
+    parse_acompanhamento_especial,
     parse_blocks,
     parse_document_tree,
     parse_expanded_folder,
@@ -1633,43 +1635,41 @@ class SEIClient:
                 f.write(r.content)
         return r.content
 
+    def read_document_content_details(
+        self,
+        doc: TreeDocument,
+    ) -> dict[str, Any]:
+        """Read document text plus OCR/visual-review provenance."""
+        result = self.download_document(doc)
+
+        if isinstance(result, str):
+            soup = BeautifulSoup(result, "lxml")
+            return {
+                "text": soup.get_text("\n", strip=True),
+                "extraction_method": "html_text",
+                "page_count": 0,
+                "image_pages": [],
+                "ocr_pages": [],
+                "visual_artifacts": [],
+                "visual_analysis_required": False,
+                "warnings": [],
+            }
+
+        extraction = extract_document_content(result, document_label=doc.nome)
+        return extraction.to_dict()
+
     def read_document_content(
         self,
         doc: TreeDocument,
     ) -> str:
         """Read a document and return plain text content.
 
-        Works for both internal SEI documents (HTML → text) and
-        external PDFs (requires pdftotext).
-
-        Args:
-            doc: TreeDocument from get_full_document_tree().
-
-        Returns:
-            Plain text content of the document.
+        Internal documents are converted from HTML. External PDFs and raw image
+        attachments use text extraction first, then OCR for image pages. The
+        richer :meth:`read_document_content_details` API additionally returns
+        rendered image paths for mandatory visual review by the agent.
         """
-        result = self.download_document(doc)
-
-        if isinstance(result, str):
-            # HTML content — extract text
-            soup = BeautifulSoup(result, 'lxml')
-            return soup.get_text('\n', strip=True)
-
-        # Binary (PDF) — try pdftotext
-        import subprocess
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=True) as tmp:
-            tmp.write(result)
-            tmp.flush()
-            proc = subprocess.run(
-                ['pdftotext', '-layout', tmp.name, '-'],
-                capture_output=True, text=True,
-            )
-            if proc.returncode == 0:
-                return proc.stdout
-            raise RuntimeError(
-                f"pdftotext failed for {doc.nome}: {proc.stderr}"
-            )
+        return self.read_document_content_details(doc)["text"]
 
     def delete_document(
         self,
@@ -1759,53 +1759,207 @@ class SEIClient:
 
         return True
 
-    def list_acompanhamento_especial(self) -> list[Process]:
-        """List processes in 'Acompanhamento Especial'.
+    @staticmethod
+    def _acompanhamento_form_pairs(
+        form: Any, overrides: dict[str, str] | None = None
+    ) -> list[tuple[str, str]]:
+        """Serialize the current special-follow-up form for a POST."""
+        pairs: list[tuple[str, str]] = []
+        for field in form.find_all(["input", "textarea"]):
+            name = field.get("name")
+            if not name or field.has_attr("disabled"):
+                continue
+            field_type = (field.get("type") or "text").lower()
+            if field_type in {"checkbox", "radio"} and not field.has_attr("checked"):
+                continue
+            pairs.append((name, field.get("value", "")))
 
-        Returns list of Process objects found on the acompanhamento page.
-        """
-        html = self._ensure_control()
-        soup = BeautifulSoup(html, "lxml")
+        for select in form.find_all("select"):
+            name = select.get("name")
+            if not name or select.has_attr("disabled"):
+                continue
+            options = select.find_all("option", selected=True)
+            if not options:
+                options = select.find_all("option")[:1]
+            pairs.extend((name, option.get("value", "")) for option in options)
 
-        acomp_url = None
-        for a in soup.find_all("a", href=True):
-            if "acompanhamento_listar" in a["href"]:
-                acomp_url = urljoin(self._sei_url(""), a["href"])
-                break
+        for name, value in (overrides or {}).items():
+            pairs = [(key, item) for key, item in pairs if key != name]
+            pairs.append((name, value))
+        return pairs
 
+    @staticmethod
+    def _acompanhamento_page_info(content: str) -> tuple[int, int]:
+        """Return zero-based current page and total pages from list HTML."""
+        soup = BeautifulSoup(content, "lxml")
+        current = 0
+        current_field = soup.find(attrs={"name": "hdnInfraPaginaAtual"})
+        if current_field and str(current_field.get("value", "")).isdigit():
+            current = int(current_field["value"])
+
+        page_size = 50
+        size_field = soup.find(attrs={"name": "hdnInfraNroItens"})
+        if size_field and str(size_field.get("value", "")).isdigit():
+            page_size = max(1, int(size_field["value"]))
+
+        page_text = soup.get_text(" ", strip=True)
+        total_pages = 1
+        match = re.search(
+            r"([\d.]+)\s+registros?\s*-\s*\d+\s+a\s+\d+",
+            page_text,
+            re.IGNORECASE,
+        )
+        if match:
+            total = int(match.group(1).replace(".", ""))
+            total_pages = max(1, (total + page_size - 1) // page_size)
+
+        for node in soup.find_all(attrs={"onclick": True}):
+            for page_match in re.finditer(
+                r"infraAcaoPaginar\(\s*['\"]=['\"]\s*,\s*(\d+)",
+                node.get("onclick", ""),
+            ):
+                total_pages = max(total_pages, int(page_match.group(1)) + 1)
+        return current, total_pages
+
+    @staticmethod
+    def _acompanhamento_group_value(form: Any, group: str) -> str:
+        """Resolve a group name or preserve a numeric SEI group id."""
+        if group.isdigit():
+            return group
+        requested = _normalize_error_text(group)
+        select = form.find("select", {"name": "selGrupoAcompanhamento"})
+        if select:
+            for option in select.find_all("option"):
+                if _normalize_error_text(option.get_text(" ", strip=True)) == requested:
+                    return option.get("value", "")
+        raise ValueError(f"Grupo de acompanhamento não encontrado: {group}")
+
+    def _get_acompanhamento_page(self) -> str | None:
+        """Load the first special-follow-up page in the current unit."""
+        control_html = self._ensure_control()
+        acomp_url = self._extract_action_url(control_html, "acompanhamento_listar")
         if not acomp_url:
             acomp_url = self._menu_links.get("acompanhamento")
         if not acomp_url:
+            return None
+
+        response = self._get(acomp_url)
+        self._control_html = None
+        return response.text
+
+    def _post_acompanhamento_page(
+        self,
+        content: str,
+        page: int,
+        overrides: dict[str, str] | None = None,
+    ) -> str:
+        soup = BeautifulSoup(content, "lxml")
+        form = soup.find("form", id="frmAcompanhamentoLista")
+        if not form:
+            raise RuntimeError("Formulário de acompanhamento especial não encontrado")
+        action = form.get("action")
+        if not action:
+            raise RuntimeError("Ação do formulário de acompanhamento especial não encontrada")
+
+        values = dict(overrides or {})
+        values["hdnInfraPaginaAtual"] = str(page)
+        response = self._post_pairs(
+            urljoin(self._sei_url(""), action),
+            self._acompanhamento_form_pairs(form, values),
+        )
+        self._control_html = None
+        return response.text
+
+    def search_acompanhamento_especial(
+        self,
+        palavras: str | None = None,
+        *,
+        grupo: str | None = None,
+    ) -> list[AcompanhamentoEspecial]:
+        """Search special follow-ups by native SEI metadata.
+
+        SEI filters the list server-side through
+        ``txtPalavrasPesquisaAcompanhamento``. Matching is then repeated
+        locally across process type, observation, group and marker labels so
+        the returned records document what was inspected. Only filtered pages
+        are fetched; process trees and documents are not opened.
+        """
+        first_page = self._get_acompanhamento_page()
+        if not first_page:
             return []
 
-        r = self._get(acomp_url)
-        self._control_html = None
+        overrides: dict[str, str] = {
+            "txtPalavrasPesquisaAcompanhamento": "",
+            "selGrupoAcompanhamento": "",
+        }
+        query = (palavras or "").strip()
+        if query:
+            overrides["txtPalavrasPesquisaAcompanhamento"] = query
 
-        # Parse process links from the page
-        procs: list[Process] = []
-        asoup = BeautifulSoup(r.text, "lxml")
-        for a in asoup.find_all("a", href=True):
-            href = a["href"]
-            text = a.get_text(strip=True)
-            if "procedimento_trabalhar" not in href:
-                continue
-            id_m = re.search(r"id_procedimento=(\d+)", href)
-            if not id_m:
-                continue
-            # Extract process number from link text (e.g. "08810035.004097/2025-01")
-            numero = text.strip()
-            if not re.match(r"\d{8}\.\d+/\d{4}-\d{2}", numero):
-                continue
-            procs.append(Process(
-                numero=numero,
-                tipo="Acompanhamento Especial",
-                especificacao="",
-                id_procedimento=id_m.group(1),
-                link=urljoin(self._sei_url(""), href),
+        if grupo is not None:
+            first_soup = BeautifulSoup(first_page, "lxml")
+            form = first_soup.find("form", id="frmAcompanhamentoLista")
+            if not form:
+                raise RuntimeError("Formulário de acompanhamento especial não encontrado")
+            overrides["selGrupoAcompanhamento"] = self._acompanhamento_group_value(form, grupo)
+
+        page_html = self._post_acompanhamento_page(first_page, 0, overrides)
+
+        current, total_pages = self._acompanhamento_page_info(page_html)
+        records: list[AcompanhamentoEspecial] = []
+        seen: set[str] = set()
+        for page in range(current, total_pages):
+            if page != current:
+                page_html = self._post_acompanhamento_page(page_html, page, overrides)
+            for record in parse_acompanhamento_especial(page_html, self._sei_url("")):
+                key = record.id_acompanhamento or (
+                    f"{record.numero}|{record.grupo}|{record.data}|{record.descricao}"
+                )
+                if key not in seen:
+                    seen.add(key)
+                    records.append(record)
+
+        terms = [_normalize_error_text(term) for term in query.split() if term.strip()]
+        if not terms:
+            return records
+
+        filtered: list[AcompanhamentoEspecial] = []
+        for record in records:
+            haystack = _normalize_error_text(
+                " ".join(
+                    [
+                        record.numero,
+                        record.tipo,
+                        record.grupo,
+                        record.descricao,
+                        *record.marcadores,
+                    ]
+                )
+            )
+            if all(term in haystack for term in terms):
+                filtered.append(record)
+        return filtered
+
+    def list_acompanhamento_especial(self) -> list[Process]:
+        """List all processes in 'Acompanhamento Especial'.
+
+        Kept as the legacy Process-shaped API; detailed searches should use
+        :meth:`search_acompanhamento_especial`.
+        """
+        records = self.search_acompanhamento_especial()
+        return [
+            Process(
+                numero=record.numero,
+                tipo=record.tipo or "Acompanhamento Especial",
+                especificacao=record.descricao,
+                id_procedimento=record.id_procedimento,
+                link=record.link,
                 novo=False,
-            ))
-
-        return procs
+                marcador=record.marcadores[0] if record.marcadores else None,
+                caixa="acompanhamento_especial",
+            )
+            for record in records
+        ]
 
     def listar_grupos_acompanhamento(self) -> list[dict]:
         """Lists all grupos de acompanhamento in current unit.

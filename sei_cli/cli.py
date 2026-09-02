@@ -794,6 +794,59 @@ def acompanhamentos_cmd(unit: str | None, as_json: bool) -> None:
     console.print(table)
 
 
+@cli.command("acompanhamento-search")
+@click.option("--palavras", "-p", default=None, help="Termos buscados na descrição/marcadores")
+@click.option("--grupo", default=None, help="Nome ou ID do grupo de acompanhamento")
+@click.option("--unit", default=None, help="Unidade SEI")
+@click.option("--json", "as_json", is_flag=True, help="Saída JSON")
+def acompanhamento_search_cmd(
+    palavras: str | None,
+    grupo: str | None,
+    unit: str | None,
+    as_json: bool,
+) -> None:
+    """Pesquisar acompanhamento especial em descrição e marcadores."""
+    try:
+        with SEIClient() as client:
+            if unit:
+                client.switch_unit(unit)
+            records = client.search_acompanhamento_especial(palavras, grupo=grupo)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        _emit(
+            {
+                "total": len(records),
+                "palavras": palavras or "",
+                "grupo": grupo,
+                "resultados": [asdict(record) for record in records],
+            },
+            True,
+        )
+        return
+
+    if not records:
+        console.print("[yellow]Nenhum acompanhamento especial corresponde à busca[/yellow]")
+        return
+
+    table = Table(title="Busca em Acompanhamento Especial")
+    table.add_column("Processo")
+    table.add_column("Tipo")
+    table.add_column("Grupo")
+    table.add_column("Descrição/observação")
+    table.add_column("Marcadores")
+    for record in records:
+        table.add_row(
+            record.numero,
+            record.tipo,
+            record.grupo,
+            record.descricao,
+            "\n".join(record.marcadores),
+        )
+    console.print(table)
+
+
 # ------------------------------------------------------------------
 # Blocos
 # ------------------------------------------------------------------

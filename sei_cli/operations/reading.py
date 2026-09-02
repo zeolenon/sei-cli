@@ -4,8 +4,6 @@ from collections import Counter
 import concurrent.futures
 import contextlib
 from datetime import date, datetime
-import io
-import importlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +14,7 @@ import tempfile
 from typing import Any
 import unicodedata
 
+from sei_cli.document_extraction import extract_document_content
 from sei_cli.models import Block, BlockDocument, Process, TreeDocument
 from sei_cli.relatorio_parser import (
     RelatorioServico,
@@ -1009,32 +1008,20 @@ def _text_excerpt(text: str, *, limit: int = 280) -> str:
     return f"{compact[: limit - 3].rstrip()}..."
 
 
+def _extract_pdf_content_from_bytes(
+    data: bytes,
+    *,
+    document_label: str = "documento",
+) -> dict[str, Any]:
+    return extract_document_content(
+        data,
+        document_label=document_label,
+    ).to_dict()
+
+
 def _extract_pdf_text_from_bytes(data: bytes) -> str:
-    # Test fixtures can inject UTF-8 text with a simple sentinel instead of a real PDF.
-    if data.startswith(b"TEXT:"):
-        return data[5:].decode("utf-8").strip()
-
-    try:
-        fitz = importlib.import_module("fitz")
-    except ImportError as exc:
-        raise ParseError(
-            "PyMuPDF (fitz) nao esta disponivel para extrair texto de PDF.",
-            details={"dependency": "PyMuPDF"},
-        ) from exc
-
-    try:
-        with fitz.open(stream=io.BytesIO(data), filetype="pdf") as document:
-            pages = [page.get_text("text").strip() for page in document]
-    except Exception as exc:
-        raise ParseError(
-            "Falha ao extrair texto do PDF.",
-            details={"reason": str(exc)},
-        ) from exc
-
-    text = "\n".join(page for page in pages if page).strip()
-    if not text:
-        raise ParseError("O PDF nao contem texto extraivel.", details={})
-    return text
+    """Backward-compatible text-only wrapper around document extraction."""
+    return _extract_pdf_content_from_bytes(data)["text"]
 
 
 def _read_tree_document_text(
@@ -1043,7 +1030,8 @@ def _read_tree_document_text(
     *,
     id_documento: str,
     id_procedimento: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict[str, Any]]:
+    read_document_content_details = getattr(client, "read_document_content_details", None)
     read_document_content = getattr(client, "read_document_content", None)
 
     def _is_session_expiry(exc: Exception) -> bool:
@@ -1057,14 +1045,50 @@ def _read_tree_document_text(
             or "login.php" in message
         )
 
-    if doc and doc.src_url and callable(read_document_content):
+    def _read_client_document(target: TreeDocument) -> tuple[str, str, dict[str, Any]]:
+        if callable(read_document_content_details):
+            result = read_document_content_details(target)
+            if not isinstance(result, dict) or "text" not in result:
+                raise ParseError("Leitor detalhado retornou formato inesperado.")
+            details = dict(result)
+            text = str(details.pop("text", ""))
+            method = "read_document_content_ocr" if details.get("visual_analysis_required") else "read_document_content"
+            return text, method, details
+        if callable(read_document_content):
+            return str(read_document_content(target)), "read_document_content", {}
+        raise ParseError(
+            "Cliente nao suporta leitura de documento.",
+            details={"id_documento": target.id_documento},
+        )
+
+    def _read_binary_payload(
+        payload: Any,
+        method: str,
+        document_label: str,
+    ) -> tuple[str, str, dict[str, Any]]:
+        if isinstance(payload, bytes):
+            details = _extract_pdf_content_from_bytes(
+                payload,
+                document_label=document_label,
+            )
+            return str(details.pop("text", "")), method, details
+        if isinstance(payload, str):
+            return payload, f"{method}_text", {}
+        raise ParseError(
+            "Tipo de retorno inesperado ao baixar documento.",
+            details={"id_documento": id_documento},
+        )
+
+    if doc and doc.src_url and (
+        callable(read_document_content_details) or callable(read_document_content)
+    ):
         try:
-            return read_document_content(doc), "read_document_content"
+            return _read_client_document(doc)
         except Exception as exc:
             if _is_session_expiry(exc) and hasattr(client, "_ensure_session"):
                 client._ensure_session()
                 try:
-                    return read_document_content(doc), "read_document_content_session_retry"
+                    return _read_client_document(doc)
                 except Exception:
                     pass
             refreshed_doc, refreshed_process_id = _refresh_tree_document(
@@ -1073,9 +1097,9 @@ def _read_tree_document_text(
                 id_documento=id_documento,
                 id_procedimento=id_procedimento,
             )
-            if refreshed_doc and refreshed_doc.src_url and callable(read_document_content):
+            if refreshed_doc and refreshed_doc.src_url:
                 try:
-                    return read_document_content(refreshed_doc), "read_document_content_retry"
+                    return _read_client_document(refreshed_doc)
                 except Exception:
                     pass
             last_error = exc
@@ -1086,12 +1110,12 @@ def _read_tree_document_text(
 
     if doc and doc.tipo.lower() == "interno":
         try:
-            return client.read_document(id_documento, id_procedimento), "read_document"
+            return client.read_document(id_documento, id_procedimento), "read_document", {}
         except Exception as exc:
             if _is_session_expiry(exc) and hasattr(client, "_ensure_session"):
                 client._ensure_session()
                 try:
-                    return client.read_document(id_documento, id_procedimento), "read_document_session_retry"
+                    return client.read_document(id_documento, id_procedimento), "read_document_session_retry", {}
                 except Exception:
                     pass
             refreshed_doc, refreshed_process_id = _refresh_tree_document(
@@ -1102,10 +1126,10 @@ def _read_tree_document_text(
             )
             if refreshed_doc:
                 try:
-                    return client.read_document(refreshed_doc.id_documento, refreshed_process_id), "read_document_retry"
+                    return client.read_document(refreshed_doc.id_documento, refreshed_process_id), "read_document_retry", {}
                 except Exception:
-                    if refreshed_doc.src_url and callable(read_document_content):
-                        return read_document_content(refreshed_doc), "read_document_content_retry"
+                    if refreshed_doc.src_url:
+                        return _read_client_document(refreshed_doc)
             raise
 
     if doc and doc.tipo.lower() in {"pdf", "documento", "externo"}:
@@ -1125,10 +1149,11 @@ def _read_tree_document_text(
                 except Exception:
                     pass
                 else:
-                    if isinstance(payload, bytes):
-                        return _extract_pdf_text_from_bytes(payload), "download_document_pdf_session_retry"
-                    if isinstance(payload, str):
-                        return payload, "download_document_text_session_retry"
+                    return _read_binary_payload(
+                        payload,
+                        "download_document_pdf",
+                        doc.nome,
+                    )
             refreshed_doc, refreshed_process_id = _refresh_tree_document(
                 client,
                 doc,
@@ -1138,24 +1163,14 @@ def _read_tree_document_text(
             if not refreshed_doc:
                 raise
             payload = downloader(refreshed_doc)
+            doc = refreshed_doc
             id_procedimento = refreshed_process_id
-            method_suffix = "_retry"
-        else:
-            method_suffix = ""
-
-        if isinstance(payload, bytes):
-            return _extract_pdf_text_from_bytes(payload), f"download_document_pdf{method_suffix}"
-        if isinstance(payload, str):
-            return payload, f"download_document_text{method_suffix}"
-        raise ParseError(
-            "Tipo de retorno inesperado ao baixar documento.",
-            details={"id_documento": id_documento, "tipo": doc.tipo},
-        )
+        return _read_binary_payload(payload, "download_document_pdf", doc.nome)
 
     if last_error is not None:
         raise last_error
 
-    return client.read_document(id_documento, id_procedimento), "read_document_fallback"
+    return client.read_document(id_documento, id_procedimento), "read_document_fallback", {}
 
 
 def _document_read_core(
@@ -1172,7 +1187,7 @@ def _document_read_core(
     docs = docs if docs is not None else client.get_full_document_tree(id_procedimento)
     doc_meta = next((doc for doc in docs if doc.id_documento == id_documento), None)
     process = process or _find_process_metadata(client, id_procedimento, None)
-    text, extraction_method = _read_tree_document_text(
+    text, extraction_method, extraction_details = _read_tree_document_text(
         client,
         doc_meta,
         id_documento=id_documento,
@@ -1204,23 +1219,27 @@ def _document_read_core(
     semantic_context, domain_context = _semantic_context(metadata, text)
     lines = [line for line in text.splitlines() if line.strip()]
 
+    data = {
+        "documento": metadata,
+        "text": text,
+        "line_count": len(lines),
+        "char_count": len(text),
+        "extraction_method": extraction_method,
+        "ui_context": ui_context,
+        "action_context": action_context,
+        "semantic_context": semantic_context,
+        "domain_context": domain_context,
+    }
+    if extraction_details:
+        data["document_extraction"] = extraction_details
+
     return {
         "resolved_ids": {
             "id_documento": id_documento,
             "id_procedimento": id_procedimento,
             "numero_documento": numero_documento_resolvido,
         },
-        "data": {
-            "documento": metadata,
-            "text": text,
-            "line_count": len(lines),
-            "char_count": len(text),
-            "extraction_method": extraction_method,
-            "ui_context": ui_context,
-            "action_context": action_context,
-            "semantic_context": semantic_context,
-            "domain_context": domain_context,
-        },
+        "data": data,
     }
 
 
@@ -1641,21 +1660,22 @@ def process_read(
                         process=process,
                         navigation_mode="process-tree-document-selection",
                     )
-                    analyzed_documents.append(
-                        {
-                            "ok": True,
-                            "resolved_ids": doc_result["resolved_ids"],
-                            "documento": doc_result["data"]["documento"],
-                            "line_count": doc_result["data"]["line_count"],
-                            "char_count": doc_result["data"]["char_count"],
-                            "extraction_method": doc_result["data"]["extraction_method"],
-                            "text_excerpt": _text_excerpt(doc_result["data"]["text"]),
-                            "ui_context": doc_result["data"]["ui_context"],
-                            "action_context": doc_result["data"]["action_context"],
-                            "semantic_context": doc_result["data"]["semantic_context"],
-                            "domain_context": doc_result["data"]["domain_context"],
-                        }
-                    )
+                    analyzed_item = {
+                        "ok": True,
+                        "resolved_ids": doc_result["resolved_ids"],
+                        "documento": doc_result["data"]["documento"],
+                        "line_count": doc_result["data"]["line_count"],
+                        "char_count": doc_result["data"]["char_count"],
+                        "extraction_method": doc_result["data"]["extraction_method"],
+                        "text_excerpt": _text_excerpt(doc_result["data"]["text"]),
+                        "ui_context": doc_result["data"]["ui_context"],
+                        "action_context": doc_result["data"]["action_context"],
+                        "semantic_context": doc_result["data"]["semantic_context"],
+                        "domain_context": doc_result["data"]["domain_context"],
+                    }
+                    if extraction := doc_result["data"].get("document_extraction"):
+                        analyzed_item["document_extraction"] = extraction
+                    analyzed_documents.append(analyzed_item)
                 except Exception as exc:
                     read_error = _classify_document_read_error(doc, exc)
                     analyzed_documents.append(
@@ -1720,6 +1740,19 @@ def process_read(
                 total_docs=len(docs),
                 docs=docs,
             )
+            visual_review_documents = [
+                {
+                    "id_documento": item["documento"].get("id_documento"),
+                    "numero_documento": item["documento"].get("sei_number"),
+                    "visual_artifacts": extraction.get("visual_artifacts", []),
+                    "image_pages": extraction.get("image_pages", []),
+                    "ocr_pages": extraction.get("ocr_pages", []),
+                    "warnings": extraction.get("warnings", []),
+                }
+                for item in analyzed_documents
+                if (extraction := item.get("document_extraction"))
+                and extraction.get("visual_analysis_required")
+            ]
 
         next_actions: list[NextAction] = []
         if selected_docs:
@@ -1773,6 +1806,10 @@ def process_read(
                 "documents": [_tree_document(doc) for doc in docs],
                 "documents_selected": [_tree_document(doc) for doc in selected_docs],
                 "documents_read": analyzed_documents,
+                "visual_review": {
+                    "required_documents_total": len(visual_review_documents),
+                    "documents": visual_review_documents,
+                },
                 "documents_restricted": documents_restricted,
                 "warning_details": warning_details,
                 "read_summary": {
@@ -2624,9 +2661,10 @@ def _contextual_triage_candidate(client: Any, process: Process, markers: list[di
     read_warning: str | None = None
     text: str | None = None
     extraction_method: str | None = None
+    extraction_details: dict[str, Any] = {}
     for candidate in context_candidates[:3]:
         try:
-            text, extraction_method = _read_tree_document_text(
+            text, extraction_method, extraction_details = _read_tree_document_text(
                 client,
                 candidate,
                 id_documento=candidate.id_documento,
@@ -2715,6 +2753,8 @@ def _contextual_triage_candidate(client: Any, process: Process, markers: list[di
             "extraction_method": extraction_method,
         },
     }
+    if extraction_details:
+        result["context_document"]["document_extraction"] = extraction_details
     if read_warning:
         result["warning"] = f"contextual_retry: {read_warning}"
     return result
