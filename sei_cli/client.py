@@ -6023,66 +6023,113 @@ class SEIClient:
                 except Exception:
                     pass  # Best effort — don't mask the real exception
 
+    def _tree_access_quality(self, arvore_html: str) -> int:
+        """Score a tree so a partial direct response is not final.
+
+        SEI can return a syntactically valid tree whose document nodes all use
+        ``about:blank``.  That tree is useful as a last-resort inventory, but
+        it is weaker than a contextual tree returned by the quick search.  A
+        positive score means that at least one document URL or current-unit
+        process action is usable.
+        """
+        if not arvore_html or "login.php" in arvore_html or "pwdSenha" in arvore_html:
+            return -1
+        if self._tree_has_current_unit_process_action(arvore_html):
+            return 100
+
+        document_nodes = list(
+            re.finditer(
+                r'new\s+infraArvoreNo\("DOCUMENTO",(.+?)\);?',
+                arvore_html,
+            )
+        )
+        usable_documents = 0
+        for match in document_nodes:
+            params = re.findall(r'"([^"]*)"', match.group(1))
+            if len(params) >= 3 and params[2].strip().casefold() != "about:blank":
+                usable_documents += 1
+        usable_documents += sum(
+            1
+            for src in re.findall(r"Nos\[\d+\]\.src\s*=\s*'([^']*)'", arvore_html)
+            if src.strip().casefold() != "about:blank"
+        )
+        if usable_documents:
+            return 50 + usable_documents
+        if document_nodes:
+            return 1
+        # A process-only tree can still be a valid navigation result.
+        return 10 if "infraArvoreNo" in arvore_html else 0
+
+    def _arvore_from_process_page(self, page_html: str) -> str | None:
+        """Load the tree iframe from a process page HTML response."""
+        if not page_html or "login.php" in page_html or "pwdSenha" in page_html:
+            return None
+        soup = BeautifulSoup(page_html, "lxml")
+        iframe = soup.find("iframe", {"name": "ifrArvore"})
+        if not iframe or not iframe.get("src"):
+            return None
+        arvore_url = urljoin(self._sei_url(""), iframe["src"])
+        response = self._get(arvore_url)
+        self._control_html = None
+        return response.text
+
     def _navigate_to_arvore(self, id_procedimento: str) -> str | None:
-        """Navigate to a process and return the ``ifrArvore`` HTML.
+        """Navigate to a process and return the best available tree HTML.
 
-        Strategy (fast → slow):
-        1. Direct URL with id_procedimento (works when session has valid hash)
-        2. Via _navigate_to_process_page (uses hashed links from control page)
-        3. Via search() — pesquisa rápida generates its own valid hashes
-
-        This returns the tree/frame HTML that references
-        ``controlador.php?acao=arvore_visualizar...``. It is not the
-        ``arvore_visualizar`` page itself.
-
-        Works regardless of whether the process is in the current unit's list.
+        Strategy (fast → slow): direct URL, hashed process-page URL, then
+        quick search.  Unlike the old implementation, a direct tree containing
+        only inaccessible ``about:blank`` document nodes is not accepted before
+        the contextual search is attempted.
         """
         self._ensure_session()
+        best_html: str | None = None
+        best_quality = -1
 
-        # Strategy 1: Direct URL
+        def consider(candidate: str | None, *, stop_at: int = 50) -> str | None:
+            nonlocal best_html, best_quality
+            if not candidate:
+                return None
+            quality = self._tree_access_quality(candidate)
+            if quality > best_quality:
+                best_html = candidate
+                best_quality = quality
+            if quality >= stop_at:
+                return candidate
+            return None
+
+        # Strategy 1: direct URL
         url = self._sei_url(
             f"controlador.php?acao=procedimento_trabalhar"
             f"&id_procedimento={id_procedimento}"
         )
-        rp = self._get(url)
-
-        if "login.php" not in str(rp.url) and "pwdSenha" not in rp.text:
-            psoup = BeautifulSoup(rp.text, "lxml")
-            iframe = psoup.find("iframe", {"name": "ifrArvore"})
-            if iframe and iframe.get("src"):
-                arvore_url = urljoin(self._sei_url(""), iframe["src"])
-                ra = self._get(arvore_url)
-                self._control_html = None
-                return ra.text
-
-        # Strategy 2: Via _navigate_to_process_page (uses hashed links)
         try:
-            psoup = self._navigate_to_process_page(id_procedimento)
-            if psoup is not None:
-                iframe = psoup.find("iframe", {"name": "ifrArvore"})
-                if iframe and iframe.get("src"):
-                    arvore_url = urljoin(self._sei_url(""), iframe["src"])
-                    ra = self._get(arvore_url)
-                    self._control_html = None
-                    return ra.text
+            direct = self._get(url)
+            candidate = self._arvore_from_process_page(direct.text)
+            if consider(candidate):
+                return candidate
         except Exception:
             pass
 
-        # Strategy 3: Via search() — pesquisa rápida
+        # Strategy 2: hashed process-page URL
+        try:
+            process_page = self._navigate_to_process_page(id_procedimento)
+            if process_page is not None:
+                candidate = self._arvore_from_process_page(str(process_page))
+                if consider(candidate):
+                    return candidate
+        except Exception:
+            pass
+
+        # Strategy 3: quick search, which often supplies the current unit hash
         try:
             result_html = self.search(id_procedimento)
-            if "ifrArvore" in result_html:
-                ssoup = BeautifulSoup(result_html, "lxml")
-                iframe = ssoup.find("iframe", {"name": "ifrArvore"})
-                if iframe and iframe.get("src"):
-                    arvore_url = urljoin(self._sei_url(""), iframe["src"])
-                    ra = self._get(arvore_url)
-                    self._control_html = None
-                    return ra.text
+            candidate = self._arvore_from_process_page(result_html)
+            if consider(candidate):
+                return candidate
         except Exception:
             pass
 
-        return None
+        return best_html
 
     def _navigate_to_arvore_visualizar(self, id_procedimento: str) -> str | None:
         """Navigate from ``ifrArvore`` to the process ``arvore_visualizar`` page.

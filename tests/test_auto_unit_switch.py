@@ -399,3 +399,42 @@ class TestIsProcessInaccessible:
 
     def test_forwarded_process_with_create_action_is_accessible(self):
         assert self.client._is_process_inaccessible(ARVORE_FORWARDED_CAN_CREATE) is False
+
+
+class TestNavigateToArvore:
+    def test_retries_contextual_search_after_partial_direct_tree(self):
+        client = SEIClient.__new__(SEIClient)
+        client._sei_url = lambda path: f"https://sei.rn.gov.br/sei/{path}"
+        client._ensure_session = MagicMock()
+        client._navigate_to_process_page = MagicMock(return_value=None)
+        client._control_html = None
+
+        page = '<html><iframe name="ifrArvore" src="arvore-direta"></iframe></html>'
+        direct_response = MagicMock(text=page)
+        direct_tree = MagicMock(text=ARVORE_RESTRICTED)
+        contextual_tree = MagicMock(text=ARVORE_MIXED_CONTEXTUAL)
+        client._get = MagicMock(side_effect=[direct_response, direct_tree, contextual_tree])
+        client.search = MagicMock(return_value=page)
+
+        result = client._navigate_to_arvore("99999")
+
+        assert result == ARVORE_MIXED_CONTEXTUAL
+        client.search.assert_called_once_with("99999")
+        assert client._get.call_count == 3
+
+    def test_keeps_partial_tree_when_no_contextual_route_exists(self):
+        client = SEIClient.__new__(SEIClient)
+        client._sei_url = lambda path: f"https://sei.rn.gov.br/sei/{path}"
+        client._ensure_session = MagicMock()
+        client._navigate_to_process_page = MagicMock(return_value=None)
+        client._control_html = None
+        page = '<html><iframe name="ifrArvore" src="arvore"></iframe></html>'
+        client._get = MagicMock(
+            side_effect=[MagicMock(text=page), MagicMock(text=ARVORE_RESTRICTED)]
+        )
+        client.search = MagicMock(side_effect=RuntimeError("search unavailable"))
+
+        result = client._navigate_to_arvore("99999")
+
+        assert result == ARVORE_RESTRICTED
+        client.search.assert_called_once_with("99999")
