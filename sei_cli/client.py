@@ -3619,18 +3619,34 @@ class SEIClient:
         history_url = self._sei_url(hist_url_match.group(1).replace("&amp;", "&"))
         response = self._get(history_url)
         if full:
-            soup = BeautifulSoup(response.text, "lxml")
-            form = soup.find("form", id="frmProcedimentoHistorico")
-            if form is None:
-                form = next(
-                    (
-                        candidate
-                        for candidate in soup.find_all("form")
-                        if "procedimento_consultar_historico" in candidate.get("action", "")
-                    ),
-                    None,
+            collected: list[ProcessHistoryEntry] = []
+            seen: set[tuple[str, str, str, str]] = set()
+            expected_total: int | None = None
+
+            for page_number in range(100):
+                soup = BeautifulSoup(response.text, "lxml")
+                text = soup.get_text(" ", strip=True)
+                total_match = re.search(
+                    r"\((\d+)\s+registros?\s*-\s*\d+\s+a\s+\d+\)",
+                    text,
+                    flags=re.IGNORECASE,
                 )
-            if form is not None:
+                if total_match:
+                    expected_total = int(total_match.group(1))
+
+                form = soup.find("form", id="frmProcedimentoHistorico")
+                if form is None:
+                    form = next(
+                        (
+                            candidate
+                            for candidate in soup.find_all("form")
+                            if "procedimento_consultar_historico" in candidate.get("action", "")
+                        ),
+                        None,
+                    )
+                if form is None:
+                    break
+
                 data: dict[str, str] = {}
                 for field in form.find_all("input"):
                     name = field.get("name")
@@ -3650,12 +3666,30 @@ class SEIClient:
                     name = field.get("name")
                     if name:
                         data[name] = field.get_text()
+
                 data["hdnTipoHistorico"] = "P"
+                data["hdnInfraPaginaAtual"] = str(page_number)
                 action = form.get("action") or history_url
                 response = self._post(
                     urljoin(self._sei_url(""), action.replace("&amp;", "&")),
                     data,
                 )
+                page_entries = parse_process_history(response.text)
+                previous_count = len(collected)
+                for entry in page_entries:
+                    key = (entry.date_time, entry.unit, entry.user, entry.description)
+                    if key not in seen:
+                        seen.add(key)
+                        collected.append(entry)
+
+                if not page_entries or len(collected) == previous_count:
+                    break
+                if expected_total is not None and len(collected) >= expected_total:
+                    break
+                if len(page_entries) < 100:
+                    break
+
+            return collected
 
         return parse_process_history(response.text)
 
@@ -5842,6 +5876,13 @@ class SEIClient:
                 "procedimento_alterar",
                 "andamento_marcador_gerenciar",
                 "procedimento_enviar",
+                # Document/form actions rendered for the current unit are
+                # also authoritative when the tree contains foreign blanks.
+                "linkAssinarDocumento",
+                "linkCienciaDocumento",
+                "linkResponderFormulario",
+                "linkEditarConteudo",
+                "linkAlterarFormulario",
             )
         )
 

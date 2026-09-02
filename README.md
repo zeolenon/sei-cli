@@ -1,222 +1,234 @@
 # sei-cli
 
-CLI Python para interagir com o SEI (RN) por HTTP puro (httpx, sem browser).
+CLI Python para operar o SEI-RN por HTTP puro, sem automação de navegador. A
+superfície atual combina leitura contextual, resumo/histórico, criação e edição
+de rascunhos e ações administrativas com `preview`/`confirm` quando há efeito
+oficial.
 
-> **🤝 Colaboradores:** Push direto na `main` está bloqueado. Leia o [CONTRIBUTING.md](CONTRIBUTING.md) antes de começar. Bugs e sugestões → **Issue primeiro**, fix via **branch + PR**.
+> Para contribuir, leia [CONTRIBUTING.md](CONTRIBUTING.md). Use branch + PR
+> conforme a política do repositório.
 
-## Instalação
+## Versão e instalação
+
+A versão atual é **0.7.1**.
+
+Com `uv`:
 
 ```bash
-pip install -e .
+uv sync
+uv run --project . sei --version
 ```
 
-## Comandos CLI
+Instalação editável alternativa:
 
-### Autenticação & Status
 ```bash
-sei login                          # Login e mostra status
-sei status                         # Status da sessão atual
-sei switch "CMDO PABM APODI"      # Trocar unidade ativa
-sei units                          # Listar unidades disponíveis
+python -m pip install -e .
+sei --version
 ```
 
-### Processos
+A saída esperada da versão é equivalente a `sei, version 0.7.1`. O projeto
+publica wheel e source distribution com a mesma versão declarada em
+`pyproject.toml` e `sei_cli.__version__`.
+
+## Uso canônico pela CLI
+
+Prefira `--json` quando a saída for consumida por um agente ou script. Todos os
+resultados canônicos usam um envelope versionado com `schema_version`, `ok`,
+`operation`, `context`, `resolved_ids`, `data`, `next_actions`, `warnings` e
+`error`.
+
+### Sessão e unidade
+
 ```bash
-sei processes                      # Listar processos na unidade
-sei search "diárias"               # Pesquisar processos
-sei docs <id_procedimento>         # Listar documentos de um processo
-sei read-doc <id_doc> <id_proc>    # Ler conteúdo de um documento
+sei login
+sei status --json
+sei units --json
+sei switch "CMDO PABM APODI" --json
+sei inbox-snapshot --json
 ```
 
-### Documentos
+A visibilidade de processos, marcadores, acompanhamentos e blocos é relativa à
+unidade atual. Não conclua que um objeto inexiste globalmente apenas porque não
+aparece no contexto atual.
+
+### Processos, documentos e histórico
+
 ```bash
-sei create-doc <id_proc> <tipo>    # Criar documento em processo
-sei save-doc <id_doc> <id_proc>    # Salvar conteúdo de documento
+sei process-open <numero-ou-id> --json
+sei process-read <numero-ou-id> --mode contextual --json
+sei process-read <numero-ou-id> --mode all --json
+sei process-summary <numero-ou-id> --json
+sei process-summary <numero-ou-id> --include-history --history-limit 20 --json
+sei process-history <numero-ou-id> --json
+sei process-history <numero-ou-id> --full --json
+sei document-read <numero-ou-id> --process-id <processo> --json
+sei relatorio-read <numero-ou-id> --process-id <processo> --json
 ```
 
-### Blocos de Assinatura
+`process-history --full` acompanha a paginação do histórico do SEI e devolve
+`total`, `returned`, `has_more`, `entries`, `latest`, `open_units`,
+`latest_process_transition` e `latest_document_activity`.
+
+`process-summary --include-history` busca o histórico completo e aplica o
+limite localmente. Isso permite que `--history-limit 20` represente os 20
+registros mais recentes, mesmo quando a tela resumida do SEI mostra menos
+linhas.
+
+### Leitura parcial e contexto de unidade
+
+A árvore do SEI pode conter documentos de outras unidades sem URL acessível no
+contexto atual. O `process-read` não interrompe a operação ao encontrar um
+documento assim: continua lendo os demais e informa a cobertura.
+
+No JSON, consulte:
+
+- `data.read_summary.documents_succeeded_total`;
+- `data.read_summary.documents_failed_total`;
+- `data.read_summary.documents_read_total`;
+- `data.read_summary.documents_restricted_total`;
+- `data.read_summary.read_status`: `complete`, `partial` ou `tree_only`;
+- `data.read_summary.partial_read`;
+- `data.read_summary.partial_visibility`;
+- `data.documents_restricted`;
+- `data.warning_details`.
+
+`origin_unit` e `origin_description` são metadados. A unidade autora não é um
+bloqueio automático quando a árvore contextual oferece URL ou ação utilizável.
+Quando a árvore estiver parcialmente visível, o resumo deve ser tratado como
+contextualização, não como prova de que documentos ausentes não existem.
+
+### Marcadores e acompanhamento especial
+
 ```bash
-sei blocks                         # Listar blocos de assinatura
-sei block <id_bloco>               # Ver documentos de um bloco
-
-# Operações de bloco
-sei block-add <id_proc> <id_doc> <bloco>              # Incluir doc em bloco
-sei block-add <id_proc> <id_doc> <bloco> --disponibilizar  # Incluir + disponibilizar
-sei block-disponibilizar <bloco>                       # Disponibilizar bloco
-sei block-cancelar <bloco>                             # Cancelar disponibilização
-sei block-remove <id_doc> <bloco>                      # Retirar doc do bloco
-sei block-devolver <bloco>                             # Devolver bloco recebido
+sei marker-catalog --json
+sei process-marker-preview <processo> --json
+sei process-marker-read <processo> --json
+sei process-marker-history <processo> --json
+sei process-marker-set-preview <processo> --marker <nome-ou-id> --json
+sei process-marker-set-confirm <processo> --marker <nome-ou-id> --confirm --json
+sei process-watch-read <processo> --json
+sei process-watch-preview <processo> --group <nome-ou-id> --json
+sei process-watch-confirm <processo> --group <nome-ou-id> --confirm --json
 ```
 
-### Tramitação / Encaminhamento
+Marcadores e acompanhamento especial são por unidade. Se o processo está em
+`recebidos` ou `gerados` da unidade atual, uma falha de leitura profunda não
+impede a validação da permissão de marcação/acompanhamento.
+
+### Blocos de assinatura
+
 ```bash
-sei encaminhar <id_proc> "DPSGP SECRETARIA"                        # Enviar para 1 unidade
-sei encaminhar <id_proc> "CMDO 4CIA/4BBM" "SEC 4CIA/4BBM"          # Enviar para múltiplas
-sei encaminhar <id_proc> "COBM SECRETARIA" --fechar                # Enviar e fechar na unidade atual
-sei encaminhar 08810254.000108/2026-71 "CMDO 3GBM"                 # Aceita número do processo
+sei signature-block-list --json
+sei signature-block-read <bloco> --json
+sei signature-block-review <bloco> --json
+sei block <bloco> --json
+sei signature-block-add-document-preview <bloco> <documento> --json
+sei signature-block-add-document-confirm <bloco> <documento> --confirm --json
+sei signature-block-recall-preview <bloco> --json
+sei signature-block-recall-confirm <bloco> --confirm --json
+sei signature-block-refresh-preview <bloco> --json
+sei signature-block-sign-preview <bloco> --json
+sei signature-block-sign-confirm <bloco> --confirm --json
 ```
 
-> **Nota:** Por padrão, o processo é mantido aberto na unidade atual.
-> Use `--fechar` para fechá-lo após o envio.
+`block` é alias de compatibilidade para `signature-block-read`; ambos usam o
+mesmo contrato operacional. Se o bloco não aparecer, o erro `block_not_found`
+indica que ele não foi localizado na lista da unidade atual. Consulte
+`error.details.lookup_scope` e `error.details.visibility`: ausência local não
+prova inexistência global.
 
-### Assinatura
+Assinar, disponibilizar, devolver, recolher ou encaminhar tem efeito oficial.
+Use a sequência `preview` → revisão humana → `confirm` somente quando houver
+autorização explícita para a ação.
+
+### Criação, edição, PDF e tramitação
+
 ```bash
-sei assinar <id_doc> <id_proc>     # Assinar documento
-sei assinar-lote <id_proc> <id1> <id2> ...  # Assinar múltiplos docs
-sei dar-ciencia <id_doc> <id_proc> # Dar ciência em documento
+sei process-create-preview ... --json
+sei process-create-confirm ... --confirm --json
+sei document-create-preview ... --json
+sei document-create-confirm ... --confirm --json
+sei document-edit-preview ... --json
+sei document-edit-confirm ... --confirm --json
+sei document-quality-check ... --json
+sei process-pdf-preview <processo> --json
+sei process-pdf-confirm <processo> --confirm --json
+sei document-pdf-preview <documento> --process-id <processo> --json
+sei document-pdf-confirm <documento> --process-id <processo> --confirm --json
+sei process-forward-preview <processo> <destinos...> --json
+sei process-forward-confirm <processo> <destinos...> --confirm --json
+sei process-conclude-preview <processo> --json
+sei process-conclude-confirm <processo> --confirm --json
 ```
 
-### Marcadores
-```bash
-sei marcadores                     # Listar marcadores disponíveis
-```
+Para copiar conteúdo de um documento existente, use `--documento-modelo` em
+vez de tratar `--texto-inicial T` como conteúdo. `N`, `T` e `D` são modos de
+texto inicial do SEI; a edição do corpo ocorre depois com
+`document-edit-preview/confirm`.
 
-### Relatórios Operacionais
-```bash
-sei read-relatorio <id_doc> <id_proc>           # Parsear relatório operacional
-sei read-relatorio <id_doc> <id_proc> --summary  # Resumo legível
-```
+Para referências internas em conteúdo HTML, use âncoras nativas `ancora_sei`
+com o `id_documento` ou `id_procedimento` resolvido. Não use `href` externo
+para documentos internos.
+
+## Credenciais e segurança
+
+O cliente aceita configuração por variáveis de ambiente ou por arquivo local em
+`~/.config/sei/credentials.json`, conforme a configuração do ambiente. Nunca
+inclua valores reais de usuário, senha, token, cookie, `infra_hash` ou sessão em
+commits, issues, fixtures, logs ou mensagens.
+
+- Prefira um gerenciador de segredos que injete as variáveis somente no processo.
+- Se usar arquivo local, mantenha permissões restritas e fora do repositório.
+- Não imprima o ambiente nem o conteúdo do arquivo de credenciais.
+- Em qualquer artefato ou relatório, credenciais encontradas devem aparecer
+  somente como `[REDACTED]`.
+- Requisições reais devem usar User-Agent compatível com uma sessão de navegador;
+  a suíte automatizada não faz requisições reais.
 
 ## API Python
 
 ```python
 from sei_cli.client import SEIClient
 
-with SEIClient() as c:
-    c.login()
-    c.switch_unit("CMDO PABM APODI")
-    
-    # Processos
-    procs = c.list_processes()
-    docs = c.get_process_documents("48218772")
-    
-    # Documentos
-    c.create_document("48218772", "100000506", especificacao="Diárias")
-    sections = c.get_editor_sections("48218774", "48218772")
-    c.save_document("48218774", "48218772", sections)
-    text = c.read_document("48218774", "48218772")
-    
-    # Blocos de assinatura
-    blocks = c.list_blocks()
-    c.add_document_to_block("48218772", "48218774", "871299")
-    c.add_document_to_block("48218772", "48218774", "871299", disponibilizar=True)
-    c.disponibilizar_block("871299")
-    c.cancelar_disponibilizacao_block("871299")
-    c.remove_document_from_block("48218774", "871303")
-    c.devolver_block("869251")
-    
-    # Encaminhar (1 ou múltiplas unidades, manter aberto por padrão)
-    c.enviar_processo("48218772", "CMDO 3GBM")
-    c.enviar_processo("48218772", ["CMDO 4CIA/4BBM", "SEC 4CIA/4BBM"], manter_aberto=True)
-    
-    # Assinar documentos
-    c.assinar_documento("48568466", "48568435")
-    
-    # Dar ciência
-    c.dar_ciencia("48568466", "48568435")
-    
-    # Marcadores
-    c.set_marcador("48218772", "123", "texto opcional")
-    c.remove_marcador("48218772")
-    
-    # Relatórios
-    rel = c.read_relatorio("48218774", "48218772")
+with SEIClient() as client:
+    client.login()
+    status = client.status()
+    tree = client.get_full_document_tree("48348237")
+    history = client.get_process_history("48348237", full=True)
+    block = client.get_block("614662")
 ```
 
-## Credenciais & Segurança
+Para automações orientadas a intenção, prefira as operações em
+`sei_cli.operations`, que devolvem o contrato JSON normalizado, por exemplo
+`process_read`, `process_summary`, `process_history`, `document_read` e
+`signature_block_read`.
 
-### Opção 1: Variáveis de Ambiente (rápido pra testar)
-```bash
-export SEI_USUARIO="seu_usuario"
-export SEI_SENHA="sua_senha"
-export SEI_ORGAO="CBM"
-export SEI_LOGIN_URL="https://sei.rn.gov.br/sip/login.php"
-```
+## Desenvolvimento e verificação
 
-### Opção 2: Arquivo de Configuração (razoável)
-```bash
-mkdir -p ~/.config/sei
-cat > ~/.config/sei/credentials.json << 'EOF'
-{
-  "usuario": "seu_usuario",
-  "senha": "sua_senha",
-  "orgao": "CBM",
-  "login_url": "https://sei.rn.gov.br/sip/login.php"
-}
-EOF
-chmod 600 ~/.config/sei/credentials.json
-```
-
-### Opção 3: Bitwarden (recomendado) 🔒
-
-As opções acima funcionam pra um primeiro teste, mas credenciais em texto plano são frágeis — ficam no histórico do shell, em backups, expostas a qualquer processo que leia o filesystem.
-
-A abordagem recomendada é usar o [Bitwarden CLI](https://bitwarden.com/help/cli/) como gerenciador de segredos:
+A suíte usa fixtures offline e não deve acessar o SEI real:
 
 ```bash
-# Instalar e logar
-npm install -g @bitwarden/cli
-bw login
-
-# Criar um item no vault com suas credenciais SEI
-bw create item '{
-  "name": "SEI",
-  "login": { "username": "seu_usuario", "password": "sua_senha" },
-  "notes": "SEI_ORGAO=CBM\nSEI_LOGIN_URL=https://sei.rn.gov.br/sip/login.php"
-}'
-
-# Exportar para variáveis de ambiente no início da sessão
-export BW_SESSION=$(bw unlock --raw)
-export SEI_USUARIO=$(bw get username "SEI")
-export SEI_SENHA=$(bw get password "SEI")
-export SEI_ORGAO="CBM"
-export SEI_LOGIN_URL="https://sei.rn.gov.br/sip/login.php"
+uv run --project . pytest tests/ -q
+uv build
+uv run --project . sei --version
+git diff --check
 ```
 
-**Vantagens:**
-- Credenciais encriptadas no vault, não no disco
-- Funciona em múltiplas máquinas via sync
-- Rotação de senha = atualizar num lugar só
-- Se usar com agente de IA (Claude Code, etc.), o agente acessa via CLI sem ver a senha em texto
-
-> É assim que o maintainer do projeto gerencia credenciais. Nenhuma senha toca o filesystem em texto plano.
-
-## Regras Importantes
-
-### Blocos Disponibilizados
-Documentos em blocos **disponibilizados** não podem ser editados ou assinados.
-Fluxo correto:
-1. `block-cancelar <bloco>` — cancelar disponibilização
-2. Editar/assinar o documento
-3. `block-disponibilizar <bloco>` — re-disponibilizar
-
-### Hash de Segurança (infra_hash)
-O SEI gera `infra_hash` server-side para cada URL. URLs com hash inválido são
-rejeitadas silenciosamente. O cli navega pela cadeia de páginas para obter
-hashes válidos automaticamente.
-
-### Estados de Bloco
-```
-Gerado → Disponibilizado → Recebido → Retornado/Concluído
-```
-- **Gerado**: criado, ainda não enviado
-- **Disponibilizado**: enviado para unidade destino
-- **Recebido**: chegou na unidade destino
-- **Retornado**: devolvido pela unidade destino
-- **Concluído**: finalizado
+Smoke tests reais, quando autorizados, devem ser separados da suíte offline e
+executados somente em processos adequados para consulta. Sempre confira a
+resposta JSON, os identificadores resolvidos, a unidade/contexto e os avisos de
+visibilidade antes de reportar sucesso.
 
 ## Arquitetura
 
-- **`sei_cli/client.py`** — Client HTTP (httpx) com todas as operações
-- **`sei_cli/cli.py`** — Interface CLI (click)
-- **`sei_cli/auth.py`** — Gerenciamento de credenciais (Bitwarden)
-- **`sei_cli/models.py`** — Dataclasses (Process, Document, Block, etc.)
-- **`sei_cli/parsers.py`** — Parsers HTML (BeautifulSoup)
-- **`sei_cli/config.py`** — Configuração (URLs, timeouts)
+- `sei_cli/client.py` — sessão HTTP, navegação, hashes, formulários e parsing técnico;
+- `sei_cli/operations/` — operações canônicas, preflight, contratos e próximos passos;
+- `sei_cli/cli.py` — comandos Click e serialização humana/JSON;
+- `sei_cli/models.py` — dataclasses normalizadas;
+- `sei_cli/parsers.py` — parsers da árvore, histórico, documentos e blocos;
+- `skills/openclaw/SKILL.md` — orientação operacional para agentes;
+- `docs/operations.md` — contratos e roadmap detalhados.
 
-## Dependências
-
-- httpx (HTTP client)
-- beautifulsoup4 + lxml (HTML parsing)
-- click (CLI)
-- rich (tabelas formatadas)
+Comandos legados como `read-doc`, `read-relatorio`, `encaminhar`, `concluir`,
+`reabrir` e os antigos `block-*` permanecem por compatibilidade, mas não são o
+fluxo recomendado quando existir uma operação canônica equivalente.

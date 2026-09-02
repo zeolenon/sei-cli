@@ -410,6 +410,35 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
     current_unit_action = False
     if hasattr(client, "_tree_has_current_unit_process_action"):
         current_unit_action = bool(client._tree_has_current_unit_process_action(arvore_html))
+    if not current_unit_action:
+        # Some SEI installations render the actionable links only on the
+        # document-view page, not inside ifrArvore. Ask the client for its
+        # normalized action map before treating foreign about:blank nodes as
+        # a unit lock.
+        action_reader = getattr(client, "get_actions", None)
+        if callable(action_reader):
+            action_map: dict[str, Any] = {}
+            try:
+                action_value = action_reader(id_procedimento)
+                if isinstance(action_value, dict):
+                    action_map = action_value
+            except Exception:
+                pass
+            current_unit_action = any(
+                key in action_map
+                for key in (
+                    "linkIncluirDocumento",
+                    "linkAlterarProcesso",
+                    "linkAlterarFormulario",
+                    "linkAssinarDocumento",
+                    "linkCienciaDocumento",
+                    "linkResponderFormulario",
+                    "linkEditarConteudo",
+                    "linkReabrirProcesso",
+                    "linkConcluirProcesso",
+                    "linkEncaminharProcesso",
+                )
+            )
     if callable(detect):
         target_unit = detect(arvore_html)
     if current_unit_action:
@@ -2093,7 +2122,7 @@ def process_summary(
         history_result = process_history(
             client,
             numero_ou_id,
-            full=False,
+            full=True,
             limit=history_limit,
         )
         if history_result.get("ok"):

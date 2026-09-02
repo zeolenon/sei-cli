@@ -73,7 +73,7 @@ from sei_cli.operations import (
     tracking_group_create_confirm,
     tracking_group_create_preview,
 )
-from sei_cli.operations.reading import _select_process_documents
+from sei_cli.operations.reading import _process_unit_preflight, _select_process_documents
 from sei_cli.relatorio_parser import Militar, RelatorioServico
 
 
@@ -1434,6 +1434,41 @@ def test_process_read_keeps_tree_context_when_all_selected_documents_fail() -> N
     assert read_summary["read_status"] == "tree_only"
     assert len(result["data"]["documents_restricted"]) == 8
     assert result["data"]["process_context"]["summary_source"] == "tree_partial"
+
+
+class DocumentActionUnitClient:
+    def status(self) -> SystemStatus:
+        return SystemStatus(valid=True, unidade_sigla="ATUAL", unidade_descricao="ATUAL", usuario="", ultimo_acesso="")
+
+    def _navigate_to_arvore(self, id_procedimento: str) -> str:
+        return "<html>foreign about:blank document</html>"
+
+    def _tree_has_current_unit_process_action(self, arvore_html: str) -> bool:
+        return False
+
+    def get_actions(self, id_procedimento: str) -> dict[str, str]:
+        return {"linkAssinarDocumento": "document-action"}
+
+    def _detect_unit_restriction(self, arvore_html: str) -> str:
+        return "ORIGEM"
+
+    def _is_process_inaccessible(self, arvore_html: str) -> bool:
+        return True
+
+    def _find_accessible_unit(self, arvore_html: str) -> None:
+        return None
+
+    def _auto_unit_switch(self, arvore_html: str, *, target_unit: str | None = None):
+        return contextlib.nullcontext(None)
+
+
+def test_preflight_accepts_document_action_from_contextual_page() -> None:
+    preflight, guard = _process_unit_preflight(DocumentActionUnitClient(), "47607237")
+
+    assert preflight["access_status"] == "contextual"
+    assert preflight["access_limited"] is False
+    with guard as switched_to:
+        assert switched_to is None
 
 
 class SessionRetryReadClient(FakeClient):
