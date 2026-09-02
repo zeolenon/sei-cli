@@ -377,3 +377,26 @@ def test_parse_block_documents_ignores_infra_sistema_false_positive() -> None:
     assert docs[0].documento_id == "40365904"
     assert docs[0].numero_documento is None
     assert docs[0].numero_sei is None
+
+
+def test_parse_process_history_ignores_header_and_pager_rows() -> None:
+    html = """
+    <table id="tblHistorico">
+      <tr><th>Data/Hora</th><th>Unidade</th><th>Usuário</th><th>Descrição</th></tr>
+      <tr><td>01/09/2026 11:03</td><td>CBM - DF - CAF/CPO</td><td>Fulano</td>
+          <td>Bloco 614662 retornado para CBM - DAL - DAL/1</td></tr>
+      <tr><td>31/08/2026 09:37:18</td><td>CBM - DAL - DAL/1</td><td>Ciclano</td>
+          <td>Documento 43772118 assinado</td></tr>
+      <tr><td>128 registros - 1 a 2</td><td></td><td></td><td></td></tr>
+    </table>
+    """
+
+    from sei_cli.parsers import parse_process_history
+
+    entries = parse_process_history(html)
+
+    assert len(entries) == 2
+    assert entries[0].date_time == "01/09/2026 11:03"
+    assert entries[0].unit == "CBM - DF - CAF/CPO"
+    assert entries[0].description.startswith("Bloco 614662")
+    assert entries[1].user == "Ciclano"

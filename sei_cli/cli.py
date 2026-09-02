@@ -54,6 +54,7 @@ from sei_cli.operations import (
     process_watch_read as op_process_watch_read,
     process_open as op_process_open,
     process_read as op_process_read,
+    process_history as op_process_history,
     process_report as op_process_report,
     process_summary as op_process_summary,
     relatorio_read as op_relatorio_read,
@@ -1667,12 +1668,41 @@ def process_read_cmd(
     _emit_operation_result(result, as_json)
 
 
+@cli.command("process-history")
+@click.argument("numero_ou_id")
+@click.option("--full", is_flag=True, help="Solicita o histórico completo ao SEI")
+@click.option("--limit", default=None, type=int, help="Limita os registros retornados")
+@click.option("--date-from", default=None, help="Data inicial (DD/MM/AAAA ou DD/MM/AAAA HH:MM)")
+@click.option("--date-to", default=None, help="Data final (DD/MM/AAAA ou DD/MM/AAAA HH:MM)")
+@click.option("--json", "as_json", is_flag=True, help="Saída JSON")
+def process_history_cmd(
+    numero_ou_id: str,
+    full: bool,
+    limit: int | None,
+    date_from: str | None,
+    date_to: str | None,
+    as_json: bool,
+) -> None:
+    with SEIClient() as client:
+        result = op_process_history(
+            client,
+            numero_ou_id,
+            full=full,
+            limit=limit,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    _emit_operation_result(result, as_json)
+
+
 @cli.command("process-summary")
 @click.argument("numero_ou_id")
 @click.option("--mode", default="contextual", show_default=True, type=click.Choice(["fast", "contextual", "summary", "deep", "all"]))
 @click.option("--date-from", default=None)
 @click.option("--date-to", default=None)
 @click.option("--sample-size", default=3, show_default=True, type=int)
+@click.option("--include-history", is_flag=True, help="Inclui o histórico recente no contexto")
+@click.option("--history-limit", default=20, show_default=True, type=int, help="Máximo de eventos no resumo")
 @click.option("--json", "as_json", is_flag=True, help="Saída JSON")
 def process_summary_cmd(
     numero_ou_id: str,
@@ -1680,6 +1710,8 @@ def process_summary_cmd(
     date_from: str | None,
     date_to: str | None,
     sample_size: int,
+    include_history: bool,
+    history_limit: int,
     as_json: bool,
 ) -> None:
     with SEIClient() as client:
@@ -1690,6 +1722,8 @@ def process_summary_cmd(
             date_from=date_from,
             date_to=date_to,
             sample_size=sample_size,
+            include_history=include_history,
+            history_limit=history_limit,
         )
     _emit_operation_result(result, as_json)
 

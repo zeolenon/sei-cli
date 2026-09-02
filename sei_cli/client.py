@@ -131,7 +131,7 @@ def _serialize_lupa_select_hidden(select: Any) -> str:
 from sei_cli.config import load_credentials, orgao_to_value, SESSION_PATH
 from sei_cli.models import (
     Block, BlockDocument, Document, DocumentCreated, DocumentType,
-    EditorSection, Marcador, Process, ProcessList, SystemStatus,
+    EditorSection, Marcador, Process, ProcessHistoryEntry, ProcessList, SystemStatus,
     TramitarForm, TreeDocument, TreeFolder, Unit,
 )
 from sei_cli.relatorio_parser import (
@@ -149,6 +149,7 @@ from sei_cli.parsers import (
     parse_marcadores_list,
     parse_menu_links,
     parse_processes,
+    parse_process_history,
     parse_system_status,
     parse_tramitar_form,
     parse_tree_folders,
@@ -3574,8 +3575,18 @@ class SEIClient:
 
         raise RuntimeError("SEI não confirmou a reabertura do processo.")
 
-    def list_process_history_units(self, id_procedimento: str) -> list[str]:
-        """List unique units that appear in the process history."""
+    def get_process_history(
+        self,
+        id_procedimento: str,
+        *,
+        full: bool = False,
+    ) -> list[ProcessHistoryEntry]:
+        """Read process history, optionally requesting the complete view.
+
+        The SEI page exposes a normal history table and a ``Ver histórico
+        completo`` form.  The form details are deliberately kept here so
+        callers only need to request ``full=True``.
+        """
         arvore_html = self._navigate_to_arvore(id_procedimento)
         if not arvore_html:
             return []
@@ -3585,25 +3596,60 @@ class SEIClient:
         )
         if not hist_url_match:
             return []
-        try:
-            r = self._get(self._sei_url(hist_url_match.group(1)))
-        except Exception:
-            return []
-        soup = BeautifulSoup(r.text, "lxml")
-        table = soup.find("table")
-        if not table:
-            return []
+
+        history_url = self._sei_url(hist_url_match.group(1).replace("&amp;", "&"))
+        response = self._get(history_url)
+        if full:
+            soup = BeautifulSoup(response.text, "lxml")
+            form = soup.find("form", id="frmProcedimentoHistorico")
+            if form is None:
+                form = next(
+                    (
+                        candidate
+                        for candidate in soup.find_all("form")
+                        if "procedimento_consultar_historico" in candidate.get("action", "")
+                    ),
+                    None,
+                )
+            if form is not None:
+                data: dict[str, str] = {}
+                for field in form.find_all("input"):
+                    name = field.get("name")
+                    field_type = (field.get("type") or "").casefold()
+                    if not name or field_type in {"submit", "button", "image", "reset"}:
+                        continue
+                    if field_type in {"checkbox", "radio"} and not field.has_attr("checked"):
+                        continue
+                    data[name] = field.get("value", "")
+                for field in form.find_all("select"):
+                    name = field.get("name")
+                    if not name:
+                        continue
+                    selected = field.find("option", selected=True)
+                    data[name] = selected.get("value", "") if selected else ""
+                for field in form.find_all("textarea"):
+                    name = field.get("name")
+                    if name:
+                        data[name] = field.get_text()
+                data["hdnTipoHistorico"] = "P"
+                action = form.get("action") or history_url
+                response = self._post(
+                    urljoin(self._sei_url(""), action.replace("&amp;", "&")),
+                    data,
+                )
+
+        return parse_process_history(response.text)
+
+    def list_process_history_units(self, id_procedimento: str) -> list[str]:
+        """Backward-compatible unit-only history lookup."""
         units: list[str] = []
         seen: set[str] = set()
-        for row in table.find_all("tr")[1:]:
-            cells = row.find_all("td")
-            if len(cells) < 2:
-                continue
-            unidade = cells[1].get_text(strip=True)
-            if unidade and unidade not in seen:
-                seen.add(unidade)
-                units.append(unidade)
+        for entry in self.get_process_history(id_procedimento, full=True):
+            if entry.unit and entry.unit not in seen:
+                seen.add(entry.unit)
+                units.append(entry.unit)
         return units
+
 
     # ------------------------------------------------------------------
     # Concluir Processo

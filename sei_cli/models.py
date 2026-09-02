@@ -166,6 +166,15 @@ class TreeFolder:
 
 
 @dataclass(slots=True)
+class ProcessHistoryEntry:
+    """A normalized row from the SEI process history."""
+    date_time: str
+    unit: str
+    user: str
+    description: str
+
+
+@dataclass(slots=True)
 class SignatureInfo:
     signer: str
     role: str
