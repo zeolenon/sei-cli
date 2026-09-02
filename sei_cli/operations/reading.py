@@ -28,8 +28,10 @@ from .contracts import NextAction, OperationResult
 from .errors import (
     BlockNotFoundError,
     DocumentNotFoundError,
+    DocumentUnavailableError,
     ParseError,
     ProcessNotFoundError,
+    UnitAccessRequiredError,
     error_from_exception,
 )
 
@@ -141,6 +143,73 @@ def _tree_document(doc: TreeDocument) -> dict[str, Any]:
             for s in doc.assinaturas
         ]
     return d
+
+
+def _classify_document_read_error(doc: TreeDocument, exc: Exception) -> dict[str, Any]:
+    error = error_from_exception(exc)
+    normalized = unicodedata.normalize("NFKD", str(exc or ""))
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch)).casefold()
+    document_url = str(doc.src_url or "").casefold()
+    access_markers = (
+        "about:blank",
+        "sem download url",
+        "sem url",
+        "nao tem acesso",
+        "não tem acesso",
+        "acesso restrito",
+        "unidade atual",
+        "processo requer unidade",
+        "privado",
+        "sigiloso",
+        "restrito",
+    )
+    if not doc.src_url or document_url == "about:blank" or any(
+        marker in normalized or marker in document_url for marker in access_markers
+    ):
+        if "privado" in normalized:
+            code = "private_access"
+        elif "sigiloso" in normalized:
+            code = "classified_access"
+        elif "restrito" in normalized:
+            code = "restricted_access"
+        else:
+            code = "document_unavailable_in_current_unit"
+        return {
+            "code": code,
+            "message": error.message,
+            "retryable": error.retryable,
+            "details": {
+                **error.details,
+                "origin_unit": doc.origin_unit,
+                "origin_description": doc.origin_description,
+            },
+        }
+    return {
+        "code": error.code,
+        "message": error.message,
+        "retryable": error.retryable,
+        "details": error.details,
+    }
+
+
+def _document_restriction_preview(item: dict[str, Any]) -> dict[str, Any] | None:
+    read_error = item.get("read_error") or {}
+    if read_error.get("code") not in {
+        "document_unavailable_in_current_unit",
+        "private_access",
+        "classified_access",
+        "restricted_access",
+    }:
+        return None
+    document = item.get("documento") or {}
+    return {
+        "id_documento": document.get("id_documento"),
+        "numero_sei": document.get("sei_number"),
+        "nome": document.get("nome"),
+        "origin_unit": document.get("origin_unit"),
+        "origin_description": document.get("origin_description"),
+        "code": read_error.get("code"),
+    }
 
 
 def _block_document(doc: BlockDocument) -> dict[str, Any]:
@@ -310,6 +379,8 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
                 "target_unit": None,
                 "switched": False,
                 "restores_original_unit": False,
+                "access_status": "unknown",
+                "access_limited": False,
                 "reason": "client_has_no_auto_unit_switch",
             },
             contextlib.nullcontext(None),
@@ -324,6 +395,8 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
                 "target_unit": None,
                 "switched": False,
                 "restores_original_unit": False,
+                "access_status": "unavailable",
+                "access_limited": True,
                 "reason": "arvore_not_available",
             },
             contextlib.nullcontext(None),
@@ -334,10 +407,49 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
     is_inaccessible = getattr(client, "_is_process_inaccessible", None)
 
     target_unit = None
+    current_unit_action = False
+    if hasattr(client, "_tree_has_current_unit_process_action"):
+        current_unit_action = bool(client._tree_has_current_unit_process_action(arvore_html))
+    if not current_unit_action:
+        # Some SEI installations render the actionable links only on the
+        # document-view page, not inside ifrArvore. Ask the client for its
+        # normalized action map before treating foreign about:blank nodes as
+        # a unit lock.
+        action_reader = getattr(client, "get_actions", None)
+        if callable(action_reader):
+            action_map: dict[str, Any] = {}
+            try:
+                action_value = action_reader(id_procedimento)
+                if isinstance(action_value, dict):
+                    action_map = action_value
+            except Exception:
+                pass
+            current_unit_action = any(
+                key in action_map
+                for key in (
+                    "linkIncluirDocumento",
+                    "linkAlterarProcesso",
+                    "linkAlterarFormulario",
+                    "linkAssinarDocumento",
+                    "linkCienciaDocumento",
+                    "linkResponderFormulario",
+                    "linkEditarConteudo",
+                    "linkReabrirProcesso",
+                    "linkConcluirProcesso",
+                    "linkEncaminharProcesso",
+                )
+            )
     if callable(detect):
         target_unit = detect(arvore_html)
+    if current_unit_action:
+        target_unit = None
     if not target_unit and callable(is_inaccessible) and is_inaccessible(arvore_html) and callable(find_accessible):
         target_unit = find_accessible(arvore_html)
+
+    access_status = "restricted" if callable(is_inaccessible) and is_inaccessible(arvore_html) else "contextual"
+    if current_unit_action:
+        access_status = "contextual"
+    access_limited = access_status == "restricted"
 
     return (
         {
@@ -346,6 +458,8 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
             "target_unit": target_unit,
             "switched": False,
             "restores_original_unit": bool(target_unit),
+            "access_status": access_status,
+            "access_limited": access_limited,
             "reason": "process_unit_preflight",
         },
         auto_switch(arvore_html, target_unit=target_unit),
@@ -1446,7 +1560,38 @@ def process_read(
                 context = _context_best_effort(client, context, assumed_unit=switched_to)
 
             process = _find_process_metadata(client, id_procedimento, numero_processo)
-            docs = client.get_full_document_tree(id_procedimento)
+            docs: list[TreeDocument]
+            try:
+                docs_value = client.get_full_document_tree(id_procedimento)
+                docs = docs_value if isinstance(docs_value, list) else []
+            except Exception as tree_exc:
+                # A folder expansion can fail after the root tree was loaded.
+                # Retry without lazy expansion so visible documents survive.
+                fallback_reader = getattr(client, "get_full_document_tree", None)
+                try:
+                    fallback_value = (
+                        fallback_reader(id_procedimento, expand_all=False)
+                        if callable(fallback_reader)
+                        else []
+                    )
+                except Exception:
+                    raise tree_exc
+                docs = fallback_value if isinstance(fallback_value, list) else []
+                if not docs:
+                    raise tree_exc
+                tree_warnings = [f"Leitura parcial da árvore: {tree_exc}"]
+            else:
+                tree_warnings = list(getattr(client, "_last_tree_warnings", []))
+            if not docs:
+                if preflight.get("access_status") in {"restricted", "unavailable"}:
+                    raise UnitAccessRequiredError(
+                        "O processo não possui documentos acessíveis no contexto atual.",
+                        details={
+                            "required_unit": preflight.get("target_unit"),
+                            "current_unit": preflight.get("current_unit"),
+                        },
+                    )
+                raise ParseError("Nenhum documento foi encontrado na árvore do processo.")
             resolved_ids = {
                 "id_procedimento": id_procedimento,
                 "numero_processo": (process.numero if process and process.numero else numero_processo or numero_ou_id),
@@ -1474,6 +1619,14 @@ def process_read(
                 date_from=date_from,
                 date_to=date_to,
             )
+            warnings.extend(tree_warnings)
+            warning_details: list[dict[str, Any]] = [
+                {
+                    "code": "partial_visibility",
+                    "message": warning,
+                }
+                for warning in tree_warnings
+            ]
 
             analyzed_documents: list[dict[str, Any]] = []
             for doc in selected_docs:
@@ -1504,18 +1657,26 @@ def process_read(
                         }
                     )
                 except Exception as exc:
-                    read_error = error_from_exception(exc)
+                    read_error = _classify_document_read_error(doc, exc)
                     analyzed_documents.append(
                         {
                             "ok": False,
                             "documento": _tree_document(doc),
                             "extraction_method": "failed",
                             "read_error": {
-                                "code": read_error.code,
-                                "message": read_error.message,
-                                "retryable": read_error.retryable,
-                                "details": read_error.details,
+                                "code": read_error["code"],
+                                "message": read_error["message"],
+                                "retryable": read_error["retryable"],
+                                "details": read_error["details"],
                             },
+                        }
+                    )
+                    warning_details.append(
+                        {
+                            "code": read_error["code"],
+                            "message": read_error["message"],
+                            "document": _tree_document(doc),
+                            "details": read_error["details"],
                         }
                     )
                     warnings.append(
@@ -1524,8 +1685,35 @@ def process_read(
 
             documents_succeeded_total = sum(1 for item in analyzed_documents if item.get("ok", True))
             documents_failed_total = len(analyzed_documents) - documents_succeeded_total
+            documents_restricted = [
+                preview
+                for item in analyzed_documents
+                if (preview := _document_restriction_preview(item)) is not None
+            ]
+            if documents_restricted and not any(
+                item.get("code") == "partial_visibility" for item in warning_details
+            ):
+                warning_details.insert(
+                    0,
+                    {
+                        "code": "partial_visibility",
+                        "message": "Parte dos documentos não está acessível no contexto atual.",
+                    },
+                )
             pdf_selected_total = sum(1 for doc in selected_docs if doc.tipo.lower() in {"pdf", "documento", "externo"})
             internal_selected_total = sum(1 for doc in selected_docs if doc.tipo.lower() == "interno")
+            if documents_failed_total == 0:
+                read_status = "complete"
+            elif documents_succeeded_total > 0:
+                read_status = "partial"
+            else:
+                read_status = "tree_only"
+            partial_visibility = bool(
+                documents_failed_total or tree_warnings or preflight.get("access_limited")
+            )
+            preflight["partial_visibility"] = partial_visibility
+            if partial_visibility and documents_succeeded_total > 0:
+                preflight["access_status"] = "partial"
             process_context = _aggregate_process_context(
                 analyzed_documents,
                 selection=selection,
@@ -1585,11 +1773,18 @@ def process_read(
                 "documents": [_tree_document(doc) for doc in docs],
                 "documents_selected": [_tree_document(doc) for doc in selected_docs],
                 "documents_read": analyzed_documents,
+                "documents_restricted": documents_restricted,
+                "warning_details": warning_details,
                 "read_summary": {
                     "documents_selected_total": len(selected_docs),
                     "documents_succeeded_total": documents_succeeded_total,
                     "documents_failed_total": documents_failed_total,
-                    "partial_read": documents_failed_total > 0,
+                    "documents_read_total": documents_succeeded_total,
+                    "documents_restricted_total": len(documents_restricted),
+                    "documents_restricted": documents_restricted,
+                    "partial_read": 0 < documents_succeeded_total < len(selected_docs),
+                    "partial_visibility": partial_visibility,
+                    "read_status": read_status,
                     "pdf_selected_total": pdf_selected_total,
                     "internal_selected_total": internal_selected_total,
                 },
@@ -1721,6 +1916,158 @@ def relatorio_to_militar(person: dict[str, Any]) -> Any:
     )
 
 
+def _history_entry_dict(entry: Any) -> dict[str, str]:
+    if isinstance(entry, dict):
+        return {
+            "date_time": str(entry.get("date_time") or entry.get("data") or ""),
+            "unit": str(entry.get("unit") or entry.get("unidade") or ""),
+            "user": str(entry.get("user") or entry.get("usuario") or ""),
+            "description": str(entry.get("description") or entry.get("descricao") or ""),
+        }
+    return {
+        "date_time": str(getattr(entry, "date_time", "") or ""),
+        "unit": str(getattr(entry, "unit", "") or ""),
+        "user": str(getattr(entry, "user", "") or ""),
+        "description": str(getattr(entry, "description", "") or ""),
+    }
+
+
+def _history_datetime(value: str) -> datetime:
+    for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(value.strip(), fmt)
+        except ValueError:
+            continue
+    return datetime.min
+
+
+def _history_normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch)).casefold()
+
+
+def _history_open_units(entries: list[dict[str, str]]) -> list[str]:
+    states: dict[str, str] = {}
+    for entry in reversed(entries):
+        unit = entry.get("unit", "").strip()
+        description = _history_normalize_text(entry.get("description", ""))
+        if not unit:
+            continue
+        if "recebido na unidade" in description or "processo recebido" in description:
+            states[unit] = "open"
+        elif "remetido pela unidade" in description or "processo remetido" in description:
+            states[unit] = "sent"
+    return [unit for unit, state in states.items() if state == "open"]
+
+
+def _latest_history_entry(
+    entries: list[dict[str, str]],
+    keywords: tuple[str, ...],
+) -> dict[str, str] | None:
+    for entry in entries:
+        haystack = _history_normalize_text(
+            f"{entry.get('description', '')} {entry.get('unit', '')}"
+        )
+        if any(keyword in haystack for keyword in keywords):
+            return entry
+    return None
+
+
+def process_history(
+    client: Any,
+    numero_ou_id: str,
+    *,
+    full: bool = False,
+    limit: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict[str, Any]:
+    """Read normalized SEI process history for agents and automations."""
+    operation = "process-history"
+    resolved_ids: dict[str, Any] = {}
+    try:
+        context = _context(client)
+        id_procedimento, numero_processo = _resolve_process_id(client, numero_ou_id)
+        resolved_ids = {
+            "id_procedimento": id_procedimento,
+            "numero_processo": numero_processo or numero_ou_id,
+        }
+        reader = getattr(client, "get_process_history", None)
+        if not callable(reader):
+            raise ParseError("Cliente não suporta leitura canônica do histórico.")
+
+        raw_entries_value = reader(id_procedimento, full=full)
+        raw_entries: list[Any] = raw_entries_value if isinstance(raw_entries_value, list) else []
+        entries = [_history_entry_dict(entry) for entry in raw_entries]
+        entries.sort(key=lambda item: _history_datetime(item["date_time"]), reverse=True)
+
+        from_value = _history_datetime(date_from) if date_from else None
+        to_value = _history_datetime(date_to) if date_to else None
+        if date_from and from_value == datetime.min:
+            raise ParseError(f"Data inicial inválida: {date_from}")
+        if date_to and to_value == datetime.min:
+            raise ParseError(f"Data final inválida: {date_to}")
+        filtered = [
+            entry
+            for entry in entries
+            if (from_value is None or _history_datetime(entry["date_time"]) >= from_value)
+            and (to_value is None or _history_datetime(entry["date_time"]) <= to_value)
+        ]
+
+        effective_limit = limit if limit is not None else (None if full else 20)
+        if effective_limit is not None and effective_limit < 1:
+            raise ParseError("--limit deve ser maior que zero.")
+        returned = filtered[:effective_limit] if effective_limit is not None else filtered
+        warnings: list[str] = []
+        if not entries:
+            warnings.append("Nenhum registro de histórico foi encontrado para o processo.")
+        if effective_limit is not None and len(filtered) > len(returned):
+            warnings.append(
+                f"Histórico limitado a {len(returned)} registro(s); use --full ou aumente --limit."
+            )
+
+        transition = _latest_history_entry(
+            entries,
+            ("remetido", "recebido", "reaberto", "concluido", "concluído"),
+        )
+        document_activity = _latest_history_entry(
+            entries,
+            ("documento", "bloco", "assinatura", "anexo", "oficio", "ofício"),
+        )
+        data = {
+            "mode": "full" if full else "summary",
+            "total": len(filtered),
+            "returned": len(returned),
+            "has_more": len(filtered) > len(returned),
+            "entries": returned,
+            "latest": returned[:20],
+            "open_units": _history_open_units(entries),
+            "latest_process_transition": transition,
+            "latest_document_activity": document_activity,
+        }
+        return _result(
+            operation=operation,
+            context=context,
+            resolved_ids=resolved_ids,
+            data=data,
+            next_actions=[
+                NextAction(
+                    action="process-read",
+                    label="Ler documentos e contexto do processo",
+                    params={"numero_ou_id": id_procedimento},
+                )
+            ],
+            warnings=warnings,
+        )
+    except Exception as exc:
+        return _error_result(
+            operation=operation,
+            context=locals().get("context"),
+            resolved_ids=resolved_ids,
+            exc=exc,
+        )
+
+
 def process_summary(
     client: Any,
     numero_ou_id: str,
@@ -1729,6 +2076,8 @@ def process_summary(
     date_from: str | None = None,
     date_to: str | None = None,
     sample_size: int = 3,
+    include_history: bool = False,
+    history_limit: int = 20,
 ) -> dict[str, Any]:
     operation = "process-summary"
     base_result = process_read(
@@ -1755,6 +2104,8 @@ def process_summary(
         "preflight": data.get("preflight", {}),
         "selection": data.get("selection", {}),
         "read_summary": read_summary,
+        "documents_restricted": data.get("documents_restricted", read_summary.get("documents_restricted", [])),
+        "partial_visibility": read_summary.get("partial_visibility", False),
         "involved_military": process_context.get("involved_military", []),
         "involved_units": process_context.get("involved_units", []),
         "mentioned_dates": process_context.get("mentioned_dates", []),
@@ -1765,6 +2116,50 @@ def process_summary(
         "key_documents": process_context.get("key_documents", []),
         "action_items": _process_action_items(base_result),
     }
+
+    warnings = list(base_result.get("warnings", []))
+    if include_history:
+        history_result = process_history(
+            client,
+            numero_ou_id,
+            full=True,
+            limit=history_limit,
+        )
+        if history_result.get("ok"):
+            history_data = history_result.get("data", {})
+            latest_transition = history_data.get("latest_process_transition")
+            history_context = {
+                "open_units": history_data.get("open_units", []),
+                "latest_process_transition": latest_transition,
+                "latest_document_activity": history_data.get("latest_document_activity"),
+            }
+            summary_data["history"] = history_data
+            summary_data["history_context"] = history_context
+            source = summary_data.get("summary_source") or "documents"
+            summary_data["summary_source"] = f"{source}+history"
+            if latest_transition:
+                summary = str(summary_data.get("summary") or "").strip()
+                transition_text = (
+                    latest_transition.get("description")
+                    if isinstance(latest_transition, dict)
+                    else str(latest_transition)
+                )
+                transition_date = (
+                    latest_transition.get("date_time")
+                    if isinstance(latest_transition, dict)
+                    else ""
+                )
+                suffix = f"Última movimentação registrada: {transition_text}"
+                if transition_date:
+                    suffix += f" ({transition_date})"
+                summary_data["summary"] = f"{summary} {suffix}.".strip()
+        else:
+            history_error = history_result.get("error") or {}
+            warnings.append(
+                "Histórico não incorporado ao resumo: "
+                f"{history_error.get('message', 'leitura indisponível')}"
+            )
+
     return _result(
         operation=operation,
         context=base_result["context"],
@@ -1774,7 +2169,7 @@ def process_summary(
             NextAction(action="process-read", label="Ler contexto completo do processo", params={"numero_ou_id": numero_ou_id}),
             *[NextAction(**item) for item in base_result.get("next_actions", [])[:2]],
         ],
-        warnings=base_result.get("warnings", []),
+        warnings=warnings,
     )
 
 
@@ -3406,7 +3801,12 @@ def signature_block_read(client: Any, block_numero: str) -> dict[str, Any]:
         if not block:
             raise BlockNotFoundError(
                 f"Bloco {block_numero} nao encontrado na unidade atual.",
-                details={"block_numero": block_numero},
+                details={
+                    "block_numero": block_numero,
+                    "lookup_scope": "current_unit",
+                    "visibility": "not_visible_in_current_unit",
+                    "note": "A ausência na lista da unidade atual não prova inexistência global do bloco.",
+                },
             )
 
         documents = client.get_block_documents(block_numero)

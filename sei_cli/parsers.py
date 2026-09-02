@@ -17,7 +17,7 @@ from lxml import html
 
 from sei_cli.models import (
     Block, BlockDocument, Document, LoginForm, Process,
-    Marcador, MarcadorForm, ProcessDetails, ProcessList, SystemStatus,
+    Marcador, MarcadorForm, ProcessDetails, ProcessHistoryEntry, ProcessList, SystemStatus,
     SignatureInfo, TramitarDestino, TramitarForm, TreeDocument, TreeFolder, Unit,
 )
 
@@ -464,6 +464,36 @@ def parse_expanded_folder(content: str, base_url: str = '') -> list[TreeDocument
         ))
 
     return docs
+
+
+def parse_process_history(content: str) -> list[ProcessHistoryEntry]:
+    """Parse the full process-history table rendered by SEI.
+
+    SEI has changed the table id and CSS classes between installations, so the
+    parser intentionally uses the stable four-column layout: date/time, unit,
+    user and description. Header/pager rows are ignored.
+    """
+    page = _tree(content)
+    entries: list[ProcessHistoryEntry] = []
+    date_pattern = re.compile(r"^\d{2}/\d{2}/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?$")
+    for row in page.xpath("//tr"):
+        cells = row.xpath("./td")
+        if len(cells) < 4:
+            continue
+        values = [_norm(cell.text_content()) for cell in cells[:4]]
+        if not values[0] or not date_pattern.match(values[0]):
+            continue
+        if not any(values[1:]):
+            continue
+        entries.append(
+            ProcessHistoryEntry(
+                date_time=values[0],
+                unit=values[1],
+                user=values[2],
+                description=values[3],
+            )
+        )
+    return entries
 
 
 # --- Blocks ---

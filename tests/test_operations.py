@@ -54,6 +54,7 @@ from sei_cli.operations import (
     process_reopen_confirm,
     process_reopen_preview,
     process_report,
+    process_history,
     process_read,
     process_summary,
     relatorio_read,
@@ -72,7 +73,7 @@ from sei_cli.operations import (
     tracking_group_create_confirm,
     tracking_group_create_preview,
 )
-from sei_cli.operations.reading import _select_process_documents
+from sei_cli.operations.reading import _process_unit_preflight, _select_process_documents
 from sei_cli.relatorio_parser import Militar, RelatorioServico
 
 
@@ -1308,6 +1309,71 @@ def test_process_summary_contract() -> None:
     assert result["data"]["action_items"]
 
 
+class HistoryClient(FakeClient):
+    def get_process_history(self, id_procedimento: str, *, full: bool = False) -> list[dict[str, str]]:
+        assert id_procedimento == "47607237"
+        assert full is True or full is False
+        return [
+            {
+                "date_time": "01/09/2026 11:03",
+                "unit": "CBM - DF - CAF/CPO",
+                "user": "Fulano",
+                "description": "Bloco 614662 retornado para CBM - DAL - DAL/1",
+            },
+            {
+                "date_time": "31/08/2026 10:00",
+                "unit": "CBM - DAL - DAL/1",
+                "user": "Ciclano",
+                "description": "Processo recebido na unidade",
+            },
+            {
+                "date_time": "30/08/2026 09:00",
+                "unit": "CBM - OP 3",
+                "user": "Beltrano",
+                "description": "Processo remetido pela unidade",
+            },
+            {
+                "date_time": "29/08/2026 09:00",
+                "unit": "CBM - OP 3",
+                "user": "Beltrano",
+                "description": "Processo recebido na unidade",
+            },
+        ]
+
+
+def test_process_history_contract_and_limit() -> None:
+    result = process_history(HistoryClient(), "47607237", full=True, limit=1)
+
+    assert result["ok"] is True
+    assert result["operation"] == "process-history"
+    assert result["data"]["total"] == 4
+    assert result["data"]["returned"] == 1
+    assert result["data"]["has_more"] is True
+    assert result["data"]["entries"][0]["description"].startswith("Bloco 614662")
+    assert result["data"]["open_units"] == ["CBM - DAL - DAL/1"]
+
+
+def test_process_summary_can_include_history_context() -> None:
+    result = process_summary(HistoryClient(), "47607237", include_history=True, history_limit=2)
+
+    assert result["ok"] is True
+    assert result["data"]["history"]["returned"] == 2
+    assert result["data"]["history_context"]["open_units"] == ["CBM - DAL - DAL/1"]
+    assert "Última movimentação registrada" in result["data"]["summary"]
+    assert result["data"]["summary_source"].endswith("+history")
+
+
+def test_cli_process_history_emits_json(monkeypatch: Any) -> None:
+    monkeypatch.setattr("sei_cli.cli.SEIClient", HistoryClient)
+
+    result = CliRunner().invoke(cli, ["process-history", "47607237", "--full", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["operation"] == "process-history"
+    assert payload["data"]["total"] == 4
+
+
 class PartialContextClient(FakeClient):
     def read_document(self, id_documento: str, id_procedimento: str) -> str:
         if id_documento == "48568466":
@@ -1324,6 +1390,85 @@ class TreeOnlyContextClient(FakeClient):
 
     def download_document(self, doc: TreeDocument, output_path: str | None = None) -> bytes | str:
         raise RuntimeError("download bloqueado pela unidade atual")
+
+
+class MixedDocumentAccessClient(FakeClient):
+    restricted_ids = {"48568461", "48568468"}
+
+    def read_document(self, id_documento: str, id_procedimento: str) -> str:
+        if id_documento in self.restricted_ids:
+            raise RuntimeError("Documento indisponível na unidade atual.")
+        return super().read_document(id_documento, id_procedimento)
+
+
+def test_process_read_reports_partial_document_visibility() -> None:
+    result = process_read(MixedDocumentAccessClient(), "47607237", mode="all")
+
+    assert result["ok"] is True
+    data = result["data"]
+    read_summary = data["read_summary"]
+    assert read_summary["documents_selected_total"] == 8
+    assert read_summary["documents_succeeded_total"] == 6
+    assert read_summary["documents_failed_total"] == 2
+    assert read_summary["documents_read_total"] == 6
+    assert read_summary["partial_read"] is True
+    assert read_summary["partial_visibility"] is True
+    assert read_summary["read_status"] == "partial"
+    assert {item["id_documento"] for item in data["documents_restricted"]} == {"48568461", "48568468"}
+    assert all(
+        item["code"] == "document_unavailable_in_current_unit"
+        for item in data["documents_restricted"]
+    )
+    assert any(item["code"] == "document_unavailable_in_current_unit" for item in data["warning_details"])
+
+
+def test_process_read_keeps_tree_context_when_all_selected_documents_fail() -> None:
+    result = process_read(TreeOnlyContextClient(), "47607237", mode="all")
+
+    assert result["ok"] is True
+    read_summary = result["data"]["read_summary"]
+    assert read_summary["documents_succeeded_total"] == 0
+    assert read_summary["documents_failed_total"] == 8
+    assert read_summary["partial_read"] is False
+    assert read_summary["partial_visibility"] is True
+    assert read_summary["read_status"] == "tree_only"
+    assert len(result["data"]["documents_restricted"]) == 8
+    assert result["data"]["process_context"]["summary_source"] == "tree_partial"
+
+
+class DocumentActionUnitClient:
+    def status(self) -> SystemStatus:
+        return SystemStatus(valid=True, unidade_sigla="ATUAL", unidade_descricao="ATUAL", usuario="", ultimo_acesso="")
+
+    def _navigate_to_arvore(self, id_procedimento: str) -> str:
+        return "<html>foreign about:blank document</html>"
+
+    def _tree_has_current_unit_process_action(self, arvore_html: str) -> bool:
+        return False
+
+    def get_actions(self, id_procedimento: str) -> dict[str, str]:
+        return {"linkAssinarDocumento": "document-action"}
+
+    def _detect_unit_restriction(self, arvore_html: str) -> str:
+        return "ORIGEM"
+
+    def _is_process_inaccessible(self, arvore_html: str) -> bool:
+        return True
+
+    def _find_accessible_unit(self, arvore_html: str) -> None:
+        return None
+
+    def _auto_unit_switch(self, arvore_html: str, *, target_unit: str | None = None):
+        return contextlib.nullcontext(None)
+
+
+def test_preflight_accepts_document_action_from_contextual_page() -> None:
+    preflight, guard = _process_unit_preflight(DocumentActionUnitClient(), "47607237")
+
+    assert preflight["access_status"] == "contextual"
+    assert preflight["access_limited"] is False
+    with guard as switched_to:
+        assert switched_to is None
 
 
 class SessionRetryReadClient(FakeClient):
@@ -4427,6 +4572,38 @@ def test_process_archive_confirm_cli_json(monkeypatch) -> None:
     assert payload["ok"] is True
     assert payload["operation"] == "process-archive-confirm"
     assert payload["data"]["archive"]["concluded"] is True
+
+
+def test_cli_version_reports_package_version() -> None:
+    result = CliRunner().invoke(cli, ["--version"])
+
+    assert result.exit_code == 0
+    assert "0.7.1" in result.output
+
+
+def test_block_compatibility_command_delegates_to_signature_block_read(monkeypatch) -> None:
+    monkeypatch.setattr("sei_cli.cli.SEIClient", FakeClient)
+
+    result = CliRunner().invoke(cli, ["block", "774681", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["operation"] == "signature-block-read"
+    assert payload["resolved_ids"]["block_numero"] == "774681"
+
+
+def test_block_compatibility_command_returns_structured_missing_block_error(monkeypatch) -> None:
+    monkeypatch.setattr("sei_cli.cli.SEIClient", FakeClient)
+
+    result = CliRunner().invoke(cli, ["block", "999999", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["operation"] == "signature-block-read"
+    assert payload["resolved_ids"]["block_numero"] == "999999"
+    assert payload["error"]["code"] == "block_not_found"
 
 
 def test_signature_block_list_cli_json(monkeypatch) -> None:

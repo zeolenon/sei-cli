@@ -1,10 +1,19 @@
 ---
 name: sei
-description: "Operar o SEI via canônicas do sei-cli: leitura de processos/documentos, criação/edição de rascunhos, marcadores, triagem de ambiente, blocos de assinatura, finalização, encaminhamento, conclusão, reabertura e geração de PDFs."
+description: "Operar o SEI com leitura contextual e ações canônicas."
+version: 0.7.1
+author: Leo Zenon, Herminho
+license: MIT
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [SEI-RN, sei-cli, leitura, triagem, blocos]
+    related_skills: []
 ---
 
-> Fonte desta skill: `~/Projects/sei-cli/skills/openclaw/SKILL.md`
-> Instalação local: `ln -sf ~/Projects/sei-cli/skills/openclaw/SKILL.md ~/.openclaw/workspace/skills/sei/SKILL.md`
+Esta skill acompanha a superfície canônica do `sei-cli` 0.7.1. Os comandos
+abaixo devem ser executados pelo agente via `terminal`; a skill não expõe
+detalhes internos de HTTP, HTML, sessão ou autenticação.
 
 ## Regra principal
 
@@ -52,6 +61,8 @@ Isso é aquecimento de contexto, não pré-requisito obrigatório para toda tare
 - `sei process-open <processo> --json`
 - `sei process-read <processo> --json`
 - `sei process-summary <processo> --json`
+- `sei process-history <processo> --json`
+- `sei process-history <processo> --full --json`
 - `sei process-report <processo> --json`
 - `sei document-read <documento> --process-id <processo> --json`
 - `sei relatorio-read <documento> --process-id <processo> --json`
@@ -65,6 +76,39 @@ Regra operacional de leitura:
 - Se o resumo contextual mencionar uma norma, portaria conjunta ou documento-chave nao lido, aprofunde com `process-read --mode deep` ou `document-read` no documento citado.
 - Em processo encaminhado/recebido, `about:blank` em documentos da unidade autora nao bloqueia criacao/edicao se a unidade atual tem acao no processo. Use `document-create-*` normalmente na unidade recebedora.
 - Se `document-edit-preview` nao achar editor de primeira, a canônica deve expandir pastas lazy e tentar URL contextual atual antes de concluir que o editor nao existe.
+
+### Histórico e resumo contextual
+
+- Use `process-summary --include-history --history-limit 20 --json` para
+  contextualizar um processo sem fazer manualmente POSTs de histórico.
+- Use `process-history --full --json` quando for necessário o conjunto completo
+  de movimentações; `--limit`, `--date-from` e `--date-to` reduzem a consulta.
+- Leia `data.history_context`, `open_units`, `latest_process_transition` e
+  `latest_document_activity` junto com os documentos. Histórico contextualiza o
+  andamento, mas não substitui a leitura do documento-chave.
+- Se `summary_source` terminar em `+history`, o resumo combinou documentos e
+  histórico. Se for `tree_partial`, há contexto de árvore, mas não texto
+  documental suficiente para classificação segura.
+
+### Leitura parcial e visibilidade
+
+- `process-read --mode all --json` tenta cada documento individualmente; uma
+  falha não interrompe os demais.
+- Considere `read_summary.read_status`:
+  - `complete`: todos os documentos selecionados foram lidos;
+  - `partial`: parte foi lida e parte falhou;
+  - `tree_only`: a árvore é visível, mas nenhum documento selecionado foi lido.
+- Use `documents_restricted`, `documents_restricted_total` e
+  `warning_details` para reportar a cobertura. Códigos relevantes incluem
+  `document_unavailable_in_current_unit`, `restricted_access`,
+  `private_access`, `classified_access` e `partial_visibility`.
+- `partial_read` significa sucesso documental parcial; `partial_visibility`
+  também cobre árvore lazy não expandida ou contexto limitado.
+- Não converta `origin_unit` em bloqueio automático. Documentos acessíveis na
+  árvore contextual da unidade atual devem ser lidos normalmente.
+- Se não houver árvore/documentos acessíveis, reporte o código estruturado
+  retornado pela operação (`unit_access_required` ou erro de leitura), sem
+  inventar conteúdo ausente.
 
 ### Criação e edição de rascunho
 
@@ -165,6 +209,8 @@ Regra operacional para acompanhamento especial:
 
 ### Blocos de assinatura
 
+- `sei block <bloco> --json` é alias compatível de
+  `signature-block-read`; não use `client.get_block()` nem parsing manual.
 - `sei signature-block-list --json`
 - `sei signature-block-read <bloco> --json`
 - `sei signature-block-review <bloco> --json`
@@ -176,6 +222,10 @@ Regra operacional para acompanhamento especial:
 - `sei signature-block-refresh-confirm <bloco> ... --confirm --json`
 - `sei signature-block-sign-preview <bloco> --json`
 - `sei signature-block-sign-confirm <bloco> --confirm --json`
+
+Quando um bloco não aparece, `block_not_found` significa que ele não foi
+localizado na lista da unidade atual. Verifique `error.details.visibility` e
+`lookup_scope`: ausência nessa lista não prova inexistência global do bloco.
 
 ## Comandos legados: não preferir
 
@@ -197,6 +247,14 @@ Se existir canônica equivalente, **não** use por padrão:
 - `block-remove`
 
 Esses comandos só entram se o usuário pedir explicitamente o legado ou se houver alguma lacuna real na canônica.
+
+## Segurança e higiene
+
+- Nenhum valor de credencial deve ser registrado; qualquer credencial eventualmente encontrada deve aparecer somente como `[REDACTED]`.
+- Nunca copie cookies, tokens, hashes de sessão ou HTML bruto para relatórios,
+  commits ou mensagens ao usuário.
+- Antes de reportar a versão, valide `sei --version`; a versão esperada desta
+  skill é `0.7.1`.
 
 ## Política de confirmação
 

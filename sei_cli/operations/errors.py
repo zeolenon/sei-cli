@@ -50,6 +50,14 @@ class BlockNotFoundError(OperationFailure):
     code = "block_not_found"
 
 
+class UnitAccessRequiredError(OperationFailure):
+    code = "unit_access_required"
+
+
+class DocumentUnavailableError(OperationFailure):
+    code = "document_unavailable_in_current_unit"
+
+
 class WorkflowViolationError(OperationFailure):
     code = "workflow_violation"
 

@@ -131,7 +131,7 @@ def _serialize_lupa_select_hidden(select: Any) -> str:
 from sei_cli.config import load_credentials, orgao_to_value, SESSION_PATH
 from sei_cli.models import (
     Block, BlockDocument, Document, DocumentCreated, DocumentType,
-    EditorSection, Marcador, Process, ProcessList, SystemStatus,
+    EditorSection, Marcador, Process, ProcessHistoryEntry, ProcessList, SystemStatus,
     TramitarForm, TreeDocument, TreeFolder, Unit,
 )
 from sei_cli.relatorio_parser import (
@@ -149,6 +149,7 @@ from sei_cli.parsers import (
     parse_marcadores_list,
     parse_menu_links,
     parse_processes,
+    parse_process_history,
     parse_system_status,
     parse_tramitar_form,
     parse_tree_folders,
@@ -1508,6 +1509,7 @@ class SEIClient:
         Returns:
             List of TreeDocument with src_url for download/viewing.
         """
+        self._last_tree_warnings: list[str] = []
         arvore_html = self._navigate_to_arvore(id_procedimento)
         if not arvore_html:
             return []
@@ -1545,11 +1547,17 @@ class SEIClient:
                     continue
 
                 post_url = self._sei_url(folder.link)
-                r = self._post(post_url, {
-                    'hdnArvore': '',
-                    'hdnPastaAtual': folder.folder_id,
-                    'hdnProtocolos': folder.protocolos,
-                })
+                try:
+                    r = self._post(post_url, {
+                        'hdnArvore': '',
+                        'hdnPastaAtual': folder.folder_id,
+                        'hdnProtocolos': folder.protocolos,
+                    })
+                except Exception as exc:
+                    self._last_tree_warnings.append(
+                        f"Falha ao expandir a pasta {folder.folder_id}: {exc}"
+                    )
+                    continue
 
                 if r.text.startswith('OK'):
                     _merge_signatures(parse_tree_signatures(r.text))
@@ -1561,6 +1569,10 @@ class SEIClient:
                         if not doc.parent_folder:
                             doc.parent_folder = folder.folder_id
                     all_docs.extend(folder_docs)
+                else:
+                    self._last_tree_warnings.append(
+                        f"A pasta {folder.folder_id} não pôde ser expandida no contexto atual."
+                    )
 
         for doc in all_docs:
             signatures = all_signatures.get(doc.id_documento, [])
@@ -2406,6 +2418,14 @@ class SEIClient:
         self._control_html = None
         
         return parse_blocks(r.text, base_url=self._sei_url(""))
+
+    def get_block(self, block_numero: str) -> Block:
+        """Get one bloco and its documents (legacy compatibility helper)."""
+        block = next((item for item in self.list_blocks() if item.numero == block_numero), None)
+        if block is None:
+            raise ValueError(f"Bloco {block_numero} nao encontrado na unidade atual.")
+        block.documentos = self.get_block_documents(block_numero)
+        return block
 
     def get_block_documents(self, block_numero: str) -> list[BlockDocument]:
         """List documents inside a specific bloco de assinatura."""
@@ -3574,8 +3594,18 @@ class SEIClient:
 
         raise RuntimeError("SEI não confirmou a reabertura do processo.")
 
-    def list_process_history_units(self, id_procedimento: str) -> list[str]:
-        """List unique units that appear in the process history."""
+    def get_process_history(
+        self,
+        id_procedimento: str,
+        *,
+        full: bool = False,
+    ) -> list[ProcessHistoryEntry]:
+        """Read process history, optionally requesting the complete view.
+
+        The SEI page exposes a normal history table and a ``Ver histórico
+        completo`` form.  The form details are deliberately kept here so
+        callers only need to request ``full=True``.
+        """
         arvore_html = self._navigate_to_arvore(id_procedimento)
         if not arvore_html:
             return []
@@ -3585,25 +3615,94 @@ class SEIClient:
         )
         if not hist_url_match:
             return []
-        try:
-            r = self._get(self._sei_url(hist_url_match.group(1)))
-        except Exception:
-            return []
-        soup = BeautifulSoup(r.text, "lxml")
-        table = soup.find("table")
-        if not table:
-            return []
+
+        history_url = self._sei_url(hist_url_match.group(1).replace("&amp;", "&"))
+        response = self._get(history_url)
+        if full:
+            collected: list[ProcessHistoryEntry] = []
+            seen: set[tuple[str, str, str, str]] = set()
+            expected_total: int | None = None
+
+            for page_number in range(100):
+                soup = BeautifulSoup(response.text, "lxml")
+                text = soup.get_text(" ", strip=True)
+                total_match = re.search(
+                    r"\((\d+)\s+registros?\s*-\s*\d+\s+a\s+\d+\)",
+                    text,
+                    flags=re.IGNORECASE,
+                )
+                if total_match:
+                    expected_total = int(total_match.group(1))
+
+                form = soup.find("form", id="frmProcedimentoHistorico")
+                if form is None:
+                    form = next(
+                        (
+                            candidate
+                            for candidate in soup.find_all("form")
+                            if "procedimento_consultar_historico" in candidate.get("action", "")
+                        ),
+                        None,
+                    )
+                if form is None:
+                    break
+
+                data: dict[str, str] = {}
+                for field in form.find_all("input"):
+                    name = field.get("name")
+                    field_type = (field.get("type") or "").casefold()
+                    if not name or field_type in {"submit", "button", "image", "reset"}:
+                        continue
+                    if field_type in {"checkbox", "radio"} and not field.has_attr("checked"):
+                        continue
+                    data[name] = field.get("value", "")
+                for field in form.find_all("select"):
+                    name = field.get("name")
+                    if not name:
+                        continue
+                    selected = field.find("option", selected=True)
+                    data[name] = selected.get("value", "") if selected else ""
+                for field in form.find_all("textarea"):
+                    name = field.get("name")
+                    if name:
+                        data[name] = field.get_text()
+
+                data["hdnTipoHistorico"] = "P"
+                data["hdnInfraPaginaAtual"] = str(page_number)
+                action = form.get("action") or history_url
+                response = self._post(
+                    urljoin(self._sei_url(""), action.replace("&amp;", "&")),
+                    data,
+                )
+                page_entries = parse_process_history(response.text)
+                previous_count = len(collected)
+                for entry in page_entries:
+                    key = (entry.date_time, entry.unit, entry.user, entry.description)
+                    if key not in seen:
+                        seen.add(key)
+                        collected.append(entry)
+
+                if not page_entries or len(collected) == previous_count:
+                    break
+                if expected_total is not None and len(collected) >= expected_total:
+                    break
+                if len(page_entries) < 100:
+                    break
+
+            return collected
+
+        return parse_process_history(response.text)
+
+    def list_process_history_units(self, id_procedimento: str) -> list[str]:
+        """Backward-compatible unit-only history lookup."""
         units: list[str] = []
         seen: set[str] = set()
-        for row in table.find_all("tr")[1:]:
-            cells = row.find_all("td")
-            if len(cells) < 2:
-                continue
-            unidade = cells[1].get_text(strip=True)
-            if unidade and unidade not in seen:
-                seen.add(unidade)
-                units.append(unidade)
+        for entry in self.get_process_history(id_procedimento, full=True):
+            if entry.unit and entry.unit not in seen:
+                seen.add(entry.unit)
+                units.append(entry.unit)
         return units
+
 
     # ------------------------------------------------------------------
     # Concluir Processo
@@ -5777,6 +5876,13 @@ class SEIClient:
                 "procedimento_alterar",
                 "andamento_marcador_gerenciar",
                 "procedimento_enviar",
+                # Document/form actions rendered for the current unit are
+                # also authoritative when the tree contains foreign blanks.
+                "linkAssinarDocumento",
+                "linkCienciaDocumento",
+                "linkResponderFormulario",
+                "linkEditarConteudo",
+                "linkAlterarFormulario",
             )
         )
 
@@ -6023,66 +6129,113 @@ class SEIClient:
                 except Exception:
                     pass  # Best effort — don't mask the real exception
 
+    def _tree_access_quality(self, arvore_html: str) -> int:
+        """Score a tree so a partial direct response is not final.
+
+        SEI can return a syntactically valid tree whose document nodes all use
+        ``about:blank``.  That tree is useful as a last-resort inventory, but
+        it is weaker than a contextual tree returned by the quick search.  A
+        positive score means that at least one document URL or current-unit
+        process action is usable.
+        """
+        if not arvore_html or "login.php" in arvore_html or "pwdSenha" in arvore_html:
+            return -1
+        if self._tree_has_current_unit_process_action(arvore_html):
+            return 100
+
+        document_nodes = list(
+            re.finditer(
+                r'new\s+infraArvoreNo\("DOCUMENTO",(.+?)\);?',
+                arvore_html,
+            )
+        )
+        usable_documents = 0
+        for match in document_nodes:
+            params = re.findall(r'"([^"]*)"', match.group(1))
+            if len(params) >= 3 and params[2].strip().casefold() != "about:blank":
+                usable_documents += 1
+        usable_documents += sum(
+            1
+            for src in re.findall(r"Nos\[\d+\]\.src\s*=\s*'([^']*)'", arvore_html)
+            if src.strip().casefold() != "about:blank"
+        )
+        if usable_documents:
+            return 50 + usable_documents
+        if document_nodes:
+            return 1
+        # A process-only tree can still be a valid navigation result.
+        return 10 if "infraArvoreNo" in arvore_html else 0
+
+    def _arvore_from_process_page(self, page_html: str) -> str | None:
+        """Load the tree iframe from a process page HTML response."""
+        if not page_html or "login.php" in page_html or "pwdSenha" in page_html:
+            return None
+        soup = BeautifulSoup(page_html, "lxml")
+        iframe = soup.find("iframe", {"name": "ifrArvore"})
+        if not iframe or not iframe.get("src"):
+            return None
+        arvore_url = urljoin(self._sei_url(""), iframe["src"])
+        response = self._get(arvore_url)
+        self._control_html = None
+        return response.text
+
     def _navigate_to_arvore(self, id_procedimento: str) -> str | None:
-        """Navigate to a process and return the ``ifrArvore`` HTML.
+        """Navigate to a process and return the best available tree HTML.
 
-        Strategy (fast → slow):
-        1. Direct URL with id_procedimento (works when session has valid hash)
-        2. Via _navigate_to_process_page (uses hashed links from control page)
-        3. Via search() — pesquisa rápida generates its own valid hashes
-
-        This returns the tree/frame HTML that references
-        ``controlador.php?acao=arvore_visualizar...``. It is not the
-        ``arvore_visualizar`` page itself.
-
-        Works regardless of whether the process is in the current unit's list.
+        Strategy (fast → slow): direct URL, hashed process-page URL, then
+        quick search.  Unlike the old implementation, a direct tree containing
+        only inaccessible ``about:blank`` document nodes is not accepted before
+        the contextual search is attempted.
         """
         self._ensure_session()
+        best_html: str | None = None
+        best_quality = -1
 
-        # Strategy 1: Direct URL
+        def consider(candidate: str | None, *, stop_at: int = 50) -> str | None:
+            nonlocal best_html, best_quality
+            if not candidate:
+                return None
+            quality = self._tree_access_quality(candidate)
+            if quality > best_quality:
+                best_html = candidate
+                best_quality = quality
+            if quality >= stop_at:
+                return candidate
+            return None
+
+        # Strategy 1: direct URL
         url = self._sei_url(
             f"controlador.php?acao=procedimento_trabalhar"
             f"&id_procedimento={id_procedimento}"
         )
-        rp = self._get(url)
-
-        if "login.php" not in str(rp.url) and "pwdSenha" not in rp.text:
-            psoup = BeautifulSoup(rp.text, "lxml")
-            iframe = psoup.find("iframe", {"name": "ifrArvore"})
-            if iframe and iframe.get("src"):
-                arvore_url = urljoin(self._sei_url(""), iframe["src"])
-                ra = self._get(arvore_url)
-                self._control_html = None
-                return ra.text
-
-        # Strategy 2: Via _navigate_to_process_page (uses hashed links)
         try:
-            psoup = self._navigate_to_process_page(id_procedimento)
-            if psoup is not None:
-                iframe = psoup.find("iframe", {"name": "ifrArvore"})
-                if iframe and iframe.get("src"):
-                    arvore_url = urljoin(self._sei_url(""), iframe["src"])
-                    ra = self._get(arvore_url)
-                    self._control_html = None
-                    return ra.text
+            direct = self._get(url)
+            candidate = self._arvore_from_process_page(direct.text)
+            if consider(candidate):
+                return candidate
         except Exception:
             pass
 
-        # Strategy 3: Via search() — pesquisa rápida
+        # Strategy 2: hashed process-page URL
+        try:
+            process_page = self._navigate_to_process_page(id_procedimento)
+            if process_page is not None:
+                candidate = self._arvore_from_process_page(str(process_page))
+                if consider(candidate):
+                    return candidate
+        except Exception:
+            pass
+
+        # Strategy 3: quick search, which often supplies the current unit hash
         try:
             result_html = self.search(id_procedimento)
-            if "ifrArvore" in result_html:
-                ssoup = BeautifulSoup(result_html, "lxml")
-                iframe = ssoup.find("iframe", {"name": "ifrArvore"})
-                if iframe and iframe.get("src"):
-                    arvore_url = urljoin(self._sei_url(""), iframe["src"])
-                    ra = self._get(arvore_url)
-                    self._control_html = None
-                    return ra.text
+            candidate = self._arvore_from_process_page(result_html)
+            if consider(candidate):
+                return candidate
         except Exception:
             pass
 
-        return None
+        return best_html
 
     def _navigate_to_arvore_visualizar(self, id_procedimento: str) -> str | None:
         """Navigate from ``ifrArvore`` to the process ``arvore_visualizar`` page.

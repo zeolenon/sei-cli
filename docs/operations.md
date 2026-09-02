@@ -85,6 +85,45 @@ Le o processo com mais contexto do que `process-open`:
 - indicadores uteis para triagem
 - opcionalmente marcadores, bloco, unidade e resumo simples
 
+`process-read` tenta os documentos individualmente. Uma falha de acesso ou de
+extracao nao interrompe a leitura dos demais. Alem de `documents_read`, o
+retorno pode conter:
+
+- `read_summary.documents_read_total`
+- `read_summary.documents_failed_total`
+- `read_summary.documents_restricted_total`
+- `read_summary.read_status`: `complete`, `partial` ou `tree_only`
+- `read_summary.partial_read` e `read_summary.partial_visibility`
+- `documents_restricted` e `warning_details`
+
+`origin_unit`/`origin_description` sao metadados. A unidade autora nao deve ser
+tratada como bloqueio quando a arvore contextual da unidade atual possui URL ou
+acao utilizavel.
+
+#### `process-history`
+Le o historico normalizado do processo sem exigir parsing manual da tela do SEI.
+
+Invocacoes recomendadas:
+
+```bash
+sei process-history <processo> --json
+sei process-history <processo> --full --json
+sei process-history <processo> --limit 20 --date-from DD/MM/YYYY --json
+```
+
+O retorno inclui `total`, `returned`, `has_more`, `entries`, `latest`,
+`open_units`, `latest_process_transition` e `latest_document_activity`.
+`--full` retorna todos os registros; sem ele, o limite padrao e 20.
+
+`process-summary` pode incorporar esse contexto com:
+
+```bash
+sei process-summary <processo> --include-history --history-limit 20 --json
+```
+
+Nesse caso, `summary_source` termina em `+history` quando o historico foi
+incorporado. Historico nao substitui a leitura do documento-chave.
+
 #### `document-read`
 Le um documento por numero SEI ou IDs internos e devolve:
 - IDs resolvidos
@@ -119,6 +158,7 @@ comando nesta lista, skills e workflows devem preferi-lo aos comandos legados.
 - `process-open`
 - `process-read`
 - `process-summary`
+- `process-history`
 - `process-report`
 - `document-read`
 - `relatorio-read`
@@ -174,6 +214,7 @@ comando nesta lista, skills e workflows devem preferi-lo aos comandos legados.
 
 ### Blocos de assinatura
 
+- `block` (alias de compatibilidade para `signature-block-read`)
 - `block-review`
 - `signature-block-list`
 - `signature-block-read`
