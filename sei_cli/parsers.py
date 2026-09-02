@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from lxml import html
 
 from sei_cli.models import (
-    Block, BlockDocument, Document, LoginForm, Process,
+    AcompanhamentoEspecial, Block, BlockDocument, Document, LoginForm, Process,
     Marcador, MarcadorForm, ProcessDetails, ProcessHistoryEntry, ProcessList, SystemStatus,
     SignatureInfo, TramitarDestino, TramitarForm, TreeDocument, TreeFolder, Unit,
 )
@@ -243,6 +243,63 @@ def parse_processes(content: str, base_url: str) -> ProcessList:
             if p:
                 dest.append(p)
     return ProcessList(recebidos=recebidos, gerados=gerados)
+
+
+def parse_acompanhamento_especial(
+    content: str, base_url: str
+) -> list[AcompanhamentoEspecial]:
+    """Parse rows from the SEI special-follow-up list.
+
+    This intentionally reads only the list page.  It does not open process
+    trees or documents, which keeps metadata searches fast and auditable.
+    """
+    page = _tree(content)
+    records: list[AcompanhamentoEspecial] = []
+    rows = page.xpath(
+        "//table[@id='tblAcompanhamentos']//tr["
+        "contains(@class,'infraTrClara') or contains(@class,'infraTrEscura')]"
+    )
+
+    for row in rows:
+        cells = row.xpath("./td")
+        process_links = row.xpath(".//a[contains(@href,'procedimento_trabalhar') and @href]")
+        if len(cells) < 7 or not process_links:
+            continue
+
+        link_el = process_links[0]
+        link = urljoin(base_url, link_el.attrib.get("href", ""))
+        numero = _norm(link_el.text_content()).replace(" ", "")
+        if not re.fullmatch(r"\d{8}\.\d+/\d{4}-\d{2}", numero):
+            continue
+
+        marker_labels = [
+            _norm(unescape(value))
+            for value in row.xpath(".//a[starts-with(@aria-label,'Marcador')]/@aria-label")
+            if _norm(unescape(value))
+        ]
+        id_acompanhamento = None
+        for marker_link in row.xpath(".//a[contains(@href,'id_acompanhamento=')]/@href"):
+            parsed = urlparse(marker_link)
+            values = parse_qs(parsed.query).get("id_acompanhamento")
+            if values:
+                id_acompanhamento = values[0]
+                break
+
+        records.append(
+            AcompanhamentoEspecial(
+                numero=numero,
+                tipo=_norm(link_el.attrib.get("title")) or "",
+                descricao=_norm(cells[6].text_content()),
+                id_procedimento=_extract_id(link),
+                link=link,
+                data=_norm(cells[4].text_content()),
+                grupo=_norm(cells[5].text_content()),
+                marcadores=list(dict.fromkeys(marker_labels)),
+                id_acompanhamento=id_acompanhamento,
+            )
+        )
+
+    return records
 
 
 # --- Document tree (from iframe JS) ---

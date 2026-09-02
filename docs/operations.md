@@ -130,6 +130,8 @@ Le um documento por numero SEI ou IDs internos e devolve:
 - metadados do documento
 - texto limpo
 - tipo detectado
+- método de extração
+- metadados de OCR e revisão visual quando houver imagem (`document_extraction`)
 - proximas acoes sugeridas
 
 #### `relatorio-read`
@@ -612,6 +614,40 @@ Regra de uso:
 - só considerar pronto para conclusão quando a verificação indicar `tracked=true`
 - para concluir depois de acompanhar, seguir com `process-conclude-preview/confirm`
 - quando a intenção do usuário for "arquivar", preferir `process-archive-preview/confirm`
+
+### Busca rápida de Acompanhamento Especial
+
+A listagem canônica para checagem de Acompanhamento Especial é:
+
+```bash
+sei acompanhamento-search --palavras "<termos>" --json
+```
+
+Ela usa o filtro nativo do SEI, percorre todas as páginas e confirma localmente
+os termos em tipo, descrição/observação, grupo e marcadores, sem acentuação.
+`--grupo` aceita nome ou ID e `--unit` troca o contexto explicitamente. A
+listagem completa sem filtro permanece em `sei acompanhamentos --json`.
+
+A busca não abre árvores, documentos ou PDFs durante a triagem. A leitura
+profunda deve ser feita apenas nos candidatos, inclusive para confirmar
+conteúdo visual em Anexos.
+
+### Leitura de Anexos externos visuais
+
+PDFs externos com páginas rasterizadas e imagens JPEG/PNG recebem OCR via
+Tesseract quando disponível. O resultado inclui `document_extraction` com:
+
+- `extraction_method`;
+- `image_pages` e `ocr_pages`;
+- `visual_artifacts`, com caminhos locais das páginas renderizadas/originais;
+- `visual_analysis_required`;
+- `warnings`, quando OCR falhar ou estiver indisponível.
+
+O agente deve analisar visualmente os artefatos quando
+`visual_analysis_required=true`. OCR é evidência textual auxiliar e não deve
+ser usado sozinho para afirmar o conteúdo de fotos, prints, tabelas,
+assinaturas manuscritas ou estado físico. Ausência de texto OCR não equivale a
+Anexo vazio.
 
 ### Arquivamento seguro
 

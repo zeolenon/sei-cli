@@ -41,6 +41,26 @@ class Process:
 
 
 @dataclass(slots=True)
+class AcompanhamentoEspecial:
+    """A row from SEI's special-follow-up list.
+
+    The list page exposes the process title and the follow-up observation,
+    while marker labels are carried by the marker link's ``aria-label``.
+    Keeping both makes searching possible without opening each process.
+    """
+
+    numero: str
+    tipo: str
+    descricao: str
+    id_procedimento: str | None
+    link: str
+    data: str = ""
+    grupo: str = ""
+    marcadores: list[str] = field(default_factory=list)
+    id_acompanhamento: str | None = None
+
+
+@dataclass(slots=True)
 class ProcessList:
     recebidos: list[Process] = field(default_factory=list)
     gerados: list[Process] = field(default_factory=list)

@@ -1,7 +1,7 @@
 ---
 name: sei
 description: "Operar o SEI com leitura contextual e ações canônicas."
-version: 0.7.1
+version: 0.8.0
 author: Leo Zenon, Herminho
 license: MIT
 platforms: [linux, macos, windows]
@@ -11,7 +11,7 @@ metadata:
     related_skills: []
 ---
 
-Esta skill acompanha a superfície canônica do `sei-cli` 0.7.1. Os comandos
+Esta skill acompanha a superfície canônica do `sei-cli` 0.8.0. Os comandos
 abaixo devem ser executados pelo agente via `terminal`; a skill não expõe
 detalhes internos de HTTP, HTML, sessão ou autenticação.
 
@@ -66,6 +66,8 @@ Isso é aquecimento de contexto, não pré-requisito obrigatório para toda tare
 - `sei process-report <processo> --json`
 - `sei document-read <documento> --process-id <processo> --json`
 - `sei relatorio-read <documento> --process-id <processo> --json`
+- `sei acompanhamento-search [--palavras "<termos>"] [--grupo <nome-ou-id>] [--unit <unidade>] --json`
+- `sei acompanhamentos [--unit <unidade>] --json` (compatibilidade/listagem sem filtro)
 
 Regra operacional de leitura:
 
@@ -76,6 +78,22 @@ Regra operacional de leitura:
 - Se o resumo contextual mencionar uma norma, portaria conjunta ou documento-chave nao lido, aprofunde com `process-read --mode deep` ou `document-read` no documento citado.
 - Em processo encaminhado/recebido, `about:blank` em documentos da unidade autora nao bloqueia criacao/edicao se a unidade atual tem acao no processo. Use `document-create-*` normalmente na unidade recebedora.
 - Se `document-edit-preview` nao achar editor de primeira, a canônica deve expandir pastas lazy e tentar URL contextual atual antes de concluir que o editor nao existe.
+- Se `document-read` ou `process-read` retornar `document_extraction.visual_analysis_required=true`, analisar também cada caminho em `visual_artifacts` com a ferramenta visual disponível (`vision_analyze` no Hermes). OCR é apoio textual; não substitui a interpretação de foto, print, tabela, assinatura manuscrita ou estado físico.
+- Não classificar Anexo externo como vazio quando `text` vier vazio ou parcial. Reportar `extraction_method`, `image_pages`, `ocr_pages` e `warnings`; se não houver ferramenta OCR/visual disponível, declarar a revisão como pendente.
+- Em `process-read`, consultar `data.visual_review` e não apenas `text_excerpt`: ele lista os documentos e páginas que exigem análise visual. Consolidar fatos visuais com o número do Anexo e a página, separando texto OCR de observação visual.
+
+### Acompanhamento Especial — busca canônica de metadados
+
+Quando a solicitação for checar, procurar ou pesquisar o Acompanhamento Especial, começar obrigatoriamente pela listagem nativa paginada:
+
+```bash
+sei acompanhamento-search --palavras "<termos>" --json
+```
+
+A operação consulta todas as páginas e confirma a pesquisa, sem sensibilidade a acentos, em tipo do processo, descrição/observação, grupo e marcadores. Pode receber `--grupo "<nome>"` ou `--grupo <id>` e `--unit "<unidade>"`. Para listar tudo sem filtro, usar `sei acompanhamentos --json`.
+
+Essa etapa é somente triagem de metadados: não abrir árvores, documentos ou PDFs dos processos não candidatos. Depois de identificar candidatos, usar `process-read`/`document-read` para confirmar o conteúdo, inclusive anexos visuais.
+
 
 ### Histórico e resumo contextual
 
@@ -254,7 +272,7 @@ Esses comandos só entram se o usuário pedir explicitamente o legado ou se houv
 - Nunca copie cookies, tokens, hashes de sessão ou HTML bruto para relatórios,
   commits ou mensagens ao usuário.
 - Antes de reportar a versão, valide `sei --version`; a versão esperada desta
-  skill é `0.7.1`.
+  skill é `0.8.0`.
 
 ## Política de confirmação
 

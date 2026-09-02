@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8.0 — OCR e leitura visual de Anexos
+
+### Acompanhamento Especial
+
+- Adiciona a busca canônica e paginada `sei acompanhamento-search`.
+- Aceita pesquisa por palavras, grupo e unidade, com confirmação local em tipo,
+  descrição/observação, grupo e marcadores, sem sensibilidade a acentos.
+- Mantém `sei acompanhamentos --json` como listagem completa compatível.
+
+### Leitura de Anexos externos
+
+- Adiciona extração centralizada para PDFs, JPEGs e PNGs externos.
+- Executa OCR via Tesseract em PDFs rasterizados e imagens brutas quando
+  disponível, com fallback de idioma para `eng`.
+- Preserva páginas visuais como artefatos locais para análise multimodal.
+- Expõe `document_extraction` e `visual_review` no contrato JSON.
+- Impede que uma imagem sem camada textual seja tratada como Anexo vazio.
+
+### Compatibilidade e limitações
+
+- `read_document_content()` continua retornando texto; consumidores que precisam
+  de proveniência devem usar `read_document_content_details()`.
+- OCR é evidência textual auxiliar. Quando
+  `visual_analysis_required=true`, a aplicação consumidora deve analisar os
+  caminhos de `visual_artifacts`; o `sei-cli` não inventa descrição visual.
+- Tesseract é opcional: sem ele, o pacote preserva os artefatos e informa a
+  pendência em `warnings`.
+
+### Validação do release
+
+- Suíte offline com pytest.
+- Verificação real no processo `08810116.003584/2025-48`:
+  17/17 documentos lidos, 7 documentos com conteúdo visual identificado e
+  artefatos visuais verificados no disco.
+
 ## 0.6.1 — Acompanhamento especial e arquivamento seguro
 
 ### Acompanhamento especial

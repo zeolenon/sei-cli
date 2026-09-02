@@ -10,7 +10,7 @@ oficial.
 
 ## Versão e instalação
 
-A versão atual é **0.7.1**.
+A versão atual é **0.8.0**.
 
 Com `uv`:
 
@@ -26,9 +26,23 @@ python -m pip install -e .
 sei --version
 ```
 
-A saída esperada da versão é equivalente a `sei, version 0.7.1`. O projeto
+A saída esperada da versão é equivalente a `sei, version 0.8.0`. O projeto
 publica wheel e source distribution com a mesma versão declarada em
 `pyproject.toml` e `sei_cli.__version__`.
+
+Para OCR de Anexos externos, instale opcionalmente o Tesseract e o pacote de
+idioma português:
+
+```bash
+# macOS
+brew install tesseract tesseract-lang
+
+# Debian/Ubuntu
+sudo apt-get install tesseract-ocr tesseract-ocr-por
+```
+
+Sem Tesseract, a leitura ainda preserva as imagens e informa
+`visual_analysis_required`/`warnings`; não trate OCR ausente como Anexo vazio.
 
 ## Uso canônico pela CLI
 
@@ -114,6 +128,32 @@ sei process-watch-confirm <processo> --group <nome-ou-id> --confirm --json
 Marcadores e acompanhamento especial são por unidade. Se o processo está em
 `recebidos` ou `gerados` da unidade atual, uma falha de leitura profunda não
 impede a validação da permissão de marcação/acompanhamento.
+
+#### Busca canônica em Acompanhamento Especial
+
+Quando a tarefa for checar o Acompanhamento Especial, comece pela busca nativa
+paginada, sem abrir árvores ou documentos não candidatos:
+
+```bash
+sei acompanhamento-search --palavras "escada emprestada" --json
+sei acompanhamento-search --grupo "Material / Logística" --json
+sei acompanhamento-search --unit "CMDO PABM APODI" --palavras "escada" --json
+sei acompanhamentos --json  # listagem completa sem filtro
+```
+
+A operação cobre tipo, descrição/observação, grupo e marcadores, com comparação
+sem acentuação, paginação completa e saída auditável. Só depois da triagem de
+metadados use `process-read` ou `document-read` nos candidatos.
+
+#### Anexos externos com imagens
+
+`document-read` e `process-read` tratam Anexos externos como PDF, imagem bruta
+ou PDF composto por imagens. O `sei-cli` faz OCR quando possível e retorna,
+no JSON, `document_extraction` com `image_pages`, `ocr_pages`, `warnings` e
+`visual_artifacts`. Quando `visual_analysis_required` for verdadeiro, os
+artefatos devem ser analisados visualmente; OCR não substitui a interpretação
+de prints, fotos, tabelas, assinaturas manuscritas ou estado físico. OCR vazio
+não significa documento vazio.
 
 ### Blocos de assinatura
 
