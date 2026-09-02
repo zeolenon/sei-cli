@@ -28,8 +28,10 @@ from .contracts import NextAction, OperationResult
 from .errors import (
     BlockNotFoundError,
     DocumentNotFoundError,
+    DocumentUnavailableError,
     ParseError,
     ProcessNotFoundError,
+    UnitAccessRequiredError,
     error_from_exception,
 )
 
@@ -141,6 +143,73 @@ def _tree_document(doc: TreeDocument) -> dict[str, Any]:
             for s in doc.assinaturas
         ]
     return d
+
+
+def _classify_document_read_error(doc: TreeDocument, exc: Exception) -> dict[str, Any]:
+    error = error_from_exception(exc)
+    normalized = unicodedata.normalize("NFKD", str(exc or ""))
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch)).casefold()
+    document_url = str(doc.src_url or "").casefold()
+    access_markers = (
+        "about:blank",
+        "sem download url",
+        "sem url",
+        "nao tem acesso",
+        "não tem acesso",
+        "acesso restrito",
+        "unidade atual",
+        "processo requer unidade",
+        "privado",
+        "sigiloso",
+        "restrito",
+    )
+    if not doc.src_url or document_url == "about:blank" or any(
+        marker in normalized or marker in document_url for marker in access_markers
+    ):
+        if "privado" in normalized:
+            code = "private_access"
+        elif "sigiloso" in normalized:
+            code = "classified_access"
+        elif "restrito" in normalized:
+            code = "restricted_access"
+        else:
+            code = "document_unavailable_in_current_unit"
+        return {
+            "code": code,
+            "message": error.message,
+            "retryable": error.retryable,
+            "details": {
+                **error.details,
+                "origin_unit": doc.origin_unit,
+                "origin_description": doc.origin_description,
+            },
+        }
+    return {
+        "code": error.code,
+        "message": error.message,
+        "retryable": error.retryable,
+        "details": error.details,
+    }
+
+
+def _document_restriction_preview(item: dict[str, Any]) -> dict[str, Any] | None:
+    read_error = item.get("read_error") or {}
+    if read_error.get("code") not in {
+        "document_unavailable_in_current_unit",
+        "private_access",
+        "classified_access",
+        "restricted_access",
+    }:
+        return None
+    document = item.get("documento") or {}
+    return {
+        "id_documento": document.get("id_documento"),
+        "numero_sei": document.get("sei_number"),
+        "nome": document.get("nome"),
+        "origin_unit": document.get("origin_unit"),
+        "origin_description": document.get("origin_description"),
+        "code": read_error.get("code"),
+    }
 
 
 def _block_document(doc: BlockDocument) -> dict[str, Any]:
@@ -310,6 +379,8 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
                 "target_unit": None,
                 "switched": False,
                 "restores_original_unit": False,
+                "access_status": "unknown",
+                "access_limited": False,
                 "reason": "client_has_no_auto_unit_switch",
             },
             contextlib.nullcontext(None),
@@ -324,6 +395,8 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
                 "target_unit": None,
                 "switched": False,
                 "restores_original_unit": False,
+                "access_status": "unavailable",
+                "access_limited": True,
                 "reason": "arvore_not_available",
             },
             contextlib.nullcontext(None),
@@ -334,10 +407,20 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
     is_inaccessible = getattr(client, "_is_process_inaccessible", None)
 
     target_unit = None
+    current_unit_action = False
+    if hasattr(client, "_tree_has_current_unit_process_action"):
+        current_unit_action = bool(client._tree_has_current_unit_process_action(arvore_html))
     if callable(detect):
         target_unit = detect(arvore_html)
+    if current_unit_action:
+        target_unit = None
     if not target_unit and callable(is_inaccessible) and is_inaccessible(arvore_html) and callable(find_accessible):
         target_unit = find_accessible(arvore_html)
+
+    access_status = "restricted" if callable(is_inaccessible) and is_inaccessible(arvore_html) else "contextual"
+    if current_unit_action:
+        access_status = "contextual"
+    access_limited = access_status == "restricted"
 
     return (
         {
@@ -346,6 +429,8 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
             "target_unit": target_unit,
             "switched": False,
             "restores_original_unit": bool(target_unit),
+            "access_status": access_status,
+            "access_limited": access_limited,
             "reason": "process_unit_preflight",
         },
         auto_switch(arvore_html, target_unit=target_unit),
@@ -1446,7 +1531,38 @@ def process_read(
                 context = _context_best_effort(client, context, assumed_unit=switched_to)
 
             process = _find_process_metadata(client, id_procedimento, numero_processo)
-            docs = client.get_full_document_tree(id_procedimento)
+            docs: list[TreeDocument]
+            try:
+                docs_value = client.get_full_document_tree(id_procedimento)
+                docs = docs_value if isinstance(docs_value, list) else []
+            except Exception as tree_exc:
+                # A folder expansion can fail after the root tree was loaded.
+                # Retry without lazy expansion so visible documents survive.
+                fallback_reader = getattr(client, "get_full_document_tree", None)
+                try:
+                    fallback_value = (
+                        fallback_reader(id_procedimento, expand_all=False)
+                        if callable(fallback_reader)
+                        else []
+                    )
+                except Exception:
+                    raise tree_exc
+                docs = fallback_value if isinstance(fallback_value, list) else []
+                if not docs:
+                    raise tree_exc
+                tree_warnings = [f"Leitura parcial da árvore: {tree_exc}"]
+            else:
+                tree_warnings = list(getattr(client, "_last_tree_warnings", []))
+            if not docs:
+                if preflight.get("access_status") in {"restricted", "unavailable"}:
+                    raise UnitAccessRequiredError(
+                        "O processo não possui documentos acessíveis no contexto atual.",
+                        details={
+                            "required_unit": preflight.get("target_unit"),
+                            "current_unit": preflight.get("current_unit"),
+                        },
+                    )
+                raise ParseError("Nenhum documento foi encontrado na árvore do processo.")
             resolved_ids = {
                 "id_procedimento": id_procedimento,
                 "numero_processo": (process.numero if process and process.numero else numero_processo or numero_ou_id),
@@ -1474,6 +1590,14 @@ def process_read(
                 date_from=date_from,
                 date_to=date_to,
             )
+            warnings.extend(tree_warnings)
+            warning_details: list[dict[str, Any]] = [
+                {
+                    "code": "partial_visibility",
+                    "message": warning,
+                }
+                for warning in tree_warnings
+            ]
 
             analyzed_documents: list[dict[str, Any]] = []
             for doc in selected_docs:
@@ -1504,18 +1628,26 @@ def process_read(
                         }
                     )
                 except Exception as exc:
-                    read_error = error_from_exception(exc)
+                    read_error = _classify_document_read_error(doc, exc)
                     analyzed_documents.append(
                         {
                             "ok": False,
                             "documento": _tree_document(doc),
                             "extraction_method": "failed",
                             "read_error": {
-                                "code": read_error.code,
-                                "message": read_error.message,
-                                "retryable": read_error.retryable,
-                                "details": read_error.details,
+                                "code": read_error["code"],
+                                "message": read_error["message"],
+                                "retryable": read_error["retryable"],
+                                "details": read_error["details"],
                             },
+                        }
+                    )
+                    warning_details.append(
+                        {
+                            "code": read_error["code"],
+                            "message": read_error["message"],
+                            "document": _tree_document(doc),
+                            "details": read_error["details"],
                         }
                     )
                     warnings.append(
@@ -1524,8 +1656,35 @@ def process_read(
 
             documents_succeeded_total = sum(1 for item in analyzed_documents if item.get("ok", True))
             documents_failed_total = len(analyzed_documents) - documents_succeeded_total
+            documents_restricted = [
+                preview
+                for item in analyzed_documents
+                if (preview := _document_restriction_preview(item)) is not None
+            ]
+            if documents_restricted and not any(
+                item.get("code") == "partial_visibility" for item in warning_details
+            ):
+                warning_details.insert(
+                    0,
+                    {
+                        "code": "partial_visibility",
+                        "message": "Parte dos documentos não está acessível no contexto atual.",
+                    },
+                )
             pdf_selected_total = sum(1 for doc in selected_docs if doc.tipo.lower() in {"pdf", "documento", "externo"})
             internal_selected_total = sum(1 for doc in selected_docs if doc.tipo.lower() == "interno")
+            if documents_failed_total == 0:
+                read_status = "complete"
+            elif documents_succeeded_total > 0:
+                read_status = "partial"
+            else:
+                read_status = "tree_only"
+            partial_visibility = bool(
+                documents_failed_total or tree_warnings or preflight.get("access_limited")
+            )
+            preflight["partial_visibility"] = partial_visibility
+            if partial_visibility and documents_succeeded_total > 0:
+                preflight["access_status"] = "partial"
             process_context = _aggregate_process_context(
                 analyzed_documents,
                 selection=selection,
@@ -1585,11 +1744,18 @@ def process_read(
                 "documents": [_tree_document(doc) for doc in docs],
                 "documents_selected": [_tree_document(doc) for doc in selected_docs],
                 "documents_read": analyzed_documents,
+                "documents_restricted": documents_restricted,
+                "warning_details": warning_details,
                 "read_summary": {
                     "documents_selected_total": len(selected_docs),
                     "documents_succeeded_total": documents_succeeded_total,
                     "documents_failed_total": documents_failed_total,
-                    "partial_read": documents_failed_total > 0,
+                    "documents_read_total": documents_succeeded_total,
+                    "documents_restricted_total": len(documents_restricted),
+                    "documents_restricted": documents_restricted,
+                    "partial_read": 0 < documents_succeeded_total < len(selected_docs),
+                    "partial_visibility": partial_visibility,
+                    "read_status": read_status,
                     "pdf_selected_total": pdf_selected_total,
                     "internal_selected_total": internal_selected_total,
                 },
@@ -1909,6 +2075,8 @@ def process_summary(
         "preflight": data.get("preflight", {}),
         "selection": data.get("selection", {}),
         "read_summary": read_summary,
+        "documents_restricted": data.get("documents_restricted", read_summary.get("documents_restricted", [])),
+        "partial_visibility": read_summary.get("partial_visibility", False),
         "involved_military": process_context.get("involved_military", []),
         "involved_units": process_context.get("involved_units", []),
         "mentioned_dates": process_context.get("mentioned_dates", []),

@@ -1509,6 +1509,7 @@ class SEIClient:
         Returns:
             List of TreeDocument with src_url for download/viewing.
         """
+        self._last_tree_warnings: list[str] = []
         arvore_html = self._navigate_to_arvore(id_procedimento)
         if not arvore_html:
             return []
@@ -1546,11 +1547,17 @@ class SEIClient:
                     continue
 
                 post_url = self._sei_url(folder.link)
-                r = self._post(post_url, {
-                    'hdnArvore': '',
-                    'hdnPastaAtual': folder.folder_id,
-                    'hdnProtocolos': folder.protocolos,
-                })
+                try:
+                    r = self._post(post_url, {
+                        'hdnArvore': '',
+                        'hdnPastaAtual': folder.folder_id,
+                        'hdnProtocolos': folder.protocolos,
+                    })
+                except Exception as exc:
+                    self._last_tree_warnings.append(
+                        f"Falha ao expandir a pasta {folder.folder_id}: {exc}"
+                    )
+                    continue
 
                 if r.text.startswith('OK'):
                     _merge_signatures(parse_tree_signatures(r.text))
@@ -1562,6 +1569,10 @@ class SEIClient:
                         if not doc.parent_folder:
                             doc.parent_folder = folder.folder_id
                     all_docs.extend(folder_docs)
+                else:
+                    self._last_tree_warnings.append(
+                        f"A pasta {folder.folder_id} não pôde ser expandida no contexto atual."
+                    )
 
         for doc in all_docs:
             signatures = all_signatures.get(doc.id_documento, [])

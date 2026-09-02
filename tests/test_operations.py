@@ -1392,6 +1392,50 @@ class TreeOnlyContextClient(FakeClient):
         raise RuntimeError("download bloqueado pela unidade atual")
 
 
+class MixedDocumentAccessClient(FakeClient):
+    restricted_ids = {"48568461", "48568468"}
+
+    def read_document(self, id_documento: str, id_procedimento: str) -> str:
+        if id_documento in self.restricted_ids:
+            raise RuntimeError("Documento indisponível na unidade atual.")
+        return super().read_document(id_documento, id_procedimento)
+
+
+def test_process_read_reports_partial_document_visibility() -> None:
+    result = process_read(MixedDocumentAccessClient(), "47607237", mode="all")
+
+    assert result["ok"] is True
+    data = result["data"]
+    read_summary = data["read_summary"]
+    assert read_summary["documents_selected_total"] == 8
+    assert read_summary["documents_succeeded_total"] == 6
+    assert read_summary["documents_failed_total"] == 2
+    assert read_summary["documents_read_total"] == 6
+    assert read_summary["partial_read"] is True
+    assert read_summary["partial_visibility"] is True
+    assert read_summary["read_status"] == "partial"
+    assert {item["id_documento"] for item in data["documents_restricted"]} == {"48568461", "48568468"}
+    assert all(
+        item["code"] == "document_unavailable_in_current_unit"
+        for item in data["documents_restricted"]
+    )
+    assert any(item["code"] == "document_unavailable_in_current_unit" for item in data["warning_details"])
+
+
+def test_process_read_keeps_tree_context_when_all_selected_documents_fail() -> None:
+    result = process_read(TreeOnlyContextClient(), "47607237", mode="all")
+
+    assert result["ok"] is True
+    read_summary = result["data"]["read_summary"]
+    assert read_summary["documents_succeeded_total"] == 0
+    assert read_summary["documents_failed_total"] == 8
+    assert read_summary["partial_read"] is False
+    assert read_summary["partial_visibility"] is True
+    assert read_summary["read_status"] == "tree_only"
+    assert len(result["data"]["documents_restricted"]) == 8
+    assert result["data"]["process_context"]["summary_source"] == "tree_partial"
+
+
 class SessionRetryReadClient(FakeClient):
     def __init__(self) -> None:
         super().__init__()
