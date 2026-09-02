@@ -9,6 +9,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from sei_cli import __version__
 from sei_cli.client import SEIClient
 from sei_cli.models import Block, Process, SystemStatus
 from sei_cli.operations import (
@@ -157,6 +158,7 @@ def _table_blocks(items: list[Block]) -> None:
 
 
 @click.group()
+@click.version_option(version=__version__, prog_name="sei")
 def cli() -> None:
     """CLI read-only para o SEI-RN."""
 
@@ -279,21 +281,13 @@ def blocks_cmd(as_json: bool) -> None:
 
 
 @cli.command("block")
-@click.argument("block_id")
+@click.argument("block_numero")
 @click.option("--json", "as_json", is_flag=True, help="Saída JSON")
-def block_cmd(block_id: str, as_json: bool) -> None:
+def block_cmd(block_numero: str, as_json: bool) -> None:
+    """Compatibilidade: lê um bloco de assinatura na unidade atual."""
     with SEIClient() as client:
-        details = client.get_block(block_id)
-    if as_json:
-        _emit(asdict(details), True)
-        return
-
-    table = Table(title=f"Bloco {details.block_id}")
-    table.add_column("Documento")
-    table.add_column("Nome")
-    for doc in details.documentos:
-        table.add_row(doc.numero, doc.nome)
-    console.print(table)
+        result = op_signature_block_read(client, block_numero)
+    _emit_operation_result(result, as_json)
 
 
 @cli.command("search")

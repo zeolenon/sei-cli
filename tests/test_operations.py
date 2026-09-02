@@ -4539,6 +4539,38 @@ def test_process_archive_confirm_cli_json(monkeypatch) -> None:
     assert payload["data"]["archive"]["concluded"] is True
 
 
+def test_cli_version_reports_package_version() -> None:
+    result = CliRunner().invoke(cli, ["--version"])
+
+    assert result.exit_code == 0
+    assert "0.7.1" in result.output
+
+
+def test_block_compatibility_command_delegates_to_signature_block_read(monkeypatch) -> None:
+    monkeypatch.setattr("sei_cli.cli.SEIClient", FakeClient)
+
+    result = CliRunner().invoke(cli, ["block", "774681", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["operation"] == "signature-block-read"
+    assert payload["resolved_ids"]["block_numero"] == "774681"
+
+
+def test_block_compatibility_command_returns_structured_missing_block_error(monkeypatch) -> None:
+    monkeypatch.setattr("sei_cli.cli.SEIClient", FakeClient)
+
+    result = CliRunner().invoke(cli, ["block", "999999", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["operation"] == "signature-block-read"
+    assert payload["resolved_ids"]["block_numero"] == "999999"
+    assert payload["error"]["code"] == "block_not_found"
+
+
 def test_signature_block_list_cli_json(monkeypatch) -> None:
     monkeypatch.setattr("sei_cli.cli.SEIClient", FakeClient)
 

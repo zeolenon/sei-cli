@@ -3772,7 +3772,12 @@ def signature_block_read(client: Any, block_numero: str) -> dict[str, Any]:
         if not block:
             raise BlockNotFoundError(
                 f"Bloco {block_numero} nao encontrado na unidade atual.",
-                details={"block_numero": block_numero},
+                details={
+                    "block_numero": block_numero,
+                    "lookup_scope": "current_unit",
+                    "visibility": "not_visible_in_current_unit",
+                    "note": "A ausência na lista da unidade atual não prova inexistência global do bloco.",
+                },
             )
 
         documents = client.get_block_documents(block_numero)

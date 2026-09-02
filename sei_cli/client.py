@@ -2419,6 +2419,14 @@ class SEIClient:
         
         return parse_blocks(r.text, base_url=self._sei_url(""))
 
+    def get_block(self, block_numero: str) -> Block:
+        """Get one bloco and its documents (legacy compatibility helper)."""
+        block = next((item for item in self.list_blocks() if item.numero == block_numero), None)
+        if block is None:
+            raise ValueError(f"Bloco {block_numero} nao encontrado na unidade atual.")
+        block.documentos = self.get_block_documents(block_numero)
+        return block
+
     def get_block_documents(self, block_numero: str) -> list[BlockDocument]:
         """List documents inside a specific bloco de assinatura."""
         detail = self._get_block_detail_page(block_numero)
