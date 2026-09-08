@@ -14,6 +14,8 @@ from sei_cli.client import SEIClient
 from sei_cli.models import Block, Process, SystemStatus
 from sei_cli.operations import (
     block_review as op_block_review,
+    document_cancel_confirm as op_document_cancel_confirm,
+    document_cancel_preview as op_document_cancel_preview,
     document_create_confirm as op_document_create_confirm,
     document_create_preview as op_document_create_preview,
     document_edit_confirm as op_document_edit_confirm,
@@ -2350,6 +2352,58 @@ def document_edit_confirm_cmd(
             process_id=process_id,
             section_id=section_id,
             confirm=confirm,
+        )
+    _emit_operation_result(result, as_json)
+
+
+@cli.command("document-cancel-preview")
+@click.argument("numero_ou_id")
+@click.option("--process-id", default=None, help="ID interno do processo")
+@click.option("--motivo", required=True, help="Motivo obrigatório do cancelamento")
+@click.option("--json", "as_json", is_flag=True, help="Saída JSON")
+def document_cancel_preview_cmd(
+    numero_ou_id: str,
+    process_id: str | None,
+    motivo: str,
+    as_json: bool,
+) -> None:
+    with SEIClient() as client:
+        result = op_document_cancel_preview(
+            client,
+            numero_ou_id,
+            motivo=motivo,
+            process_id=process_id,
+        )
+    _emit_operation_result(result, as_json)
+
+
+@cli.command("document-cancel-confirm")
+@click.argument("numero_ou_id")
+@click.option("--process-id", default=None, help="ID interno do processo")
+@click.option("--motivo", required=True, help="Motivo obrigatório do cancelamento")
+@click.option("--confirm", is_flag=True, help="Primeira confirmação: autoriza o cancelamento")
+@click.option(
+    "--confirm-impact",
+    is_flag=True,
+    help="Segunda confirmação: reconhece o impacto irreversível e a permanência na árvore",
+)
+@click.option("--json", "as_json", is_flag=True, help="Saída JSON")
+def document_cancel_confirm_cmd(
+    numero_ou_id: str,
+    process_id: str | None,
+    motivo: str,
+    confirm: bool,
+    confirm_impact: bool,
+    as_json: bool,
+) -> None:
+    with SEIClient() as client:
+        result = op_document_cancel_confirm(
+            client,
+            numero_ou_id,
+            motivo=motivo,
+            process_id=process_id,
+            confirm=confirm,
+            confirm_impact=confirm_impact,
         )
     _emit_operation_result(result, as_json)
 

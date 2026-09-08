@@ -174,6 +174,8 @@ comando nesta lista, skills e workflows devem preferi-lo aos comandos legados.
 - `document-edit-preview`
 - `document-edit-confirm`
 - `document-quality-check`
+- `document-cancel-preview`
+- `document-cancel-confirm`
 
 ### Marcadores e triagem
 
@@ -254,6 +256,24 @@ Capacidades estabilizadas:
 - gravacao na secao editavel correta
 - reler documento apos gravacao
 - quality-check com sinais de padronizacao e placeholders
+
+### Cancelamento nativo de documento
+
+O cancelamento usa exclusivamente a ação `documento_cancelar` emitida pelo
+HTML de `Nos[].acoes` do documento. O formulário nativo é
+`frmDocumentoCancelar`, com método `POST`, botão `sbmSalvar=Salvar` e motivo em
+`txaMotivo`.
+
+Regras de segurança:
+
+- o documento precisa estar assinado ou autenticado;
+- o motivo não pode ser vazio;
+- a operação exige duas confirmações independentes:
+  `--confirm` e `--confirm-impact`;
+- ausência de qualquer confirmação bloqueia antes do POST;
+- `documento_excluir` nunca é usado como fallback;
+- após o POST, o documento precisa continuar na árvore com a marcação nativa
+  de cancelado; caso contrário o resultado é tratado como falha.
 
 ### Referencias internas no corpo do documento
 
