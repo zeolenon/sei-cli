@@ -1,7 +1,7 @@
 ---
 name: sei
 description: "Operar o SEI com leitura contextual e ações canônicas."
-version: 0.8.0
+version: 0.9.0
 author: Leo Zenon, Herminho
 license: MIT
 platforms: [linux, macos, windows]
@@ -11,7 +11,7 @@ metadata:
     related_skills: []
 ---
 
-Esta skill acompanha a superfície canônica do `sei-cli` 0.8.0. Os comandos
+Esta skill acompanha a superfície canônica do `sei-cli` 0.9.0. Os comandos
 abaixo devem ser executados pelo agente via `terminal`; a skill não expõe
 detalhes internos de HTTP, HTML, sessão ou autenticação.
 
@@ -141,6 +141,21 @@ Essa etapa é somente triagem de metadados: não abrir árvores, documentos ou P
 - `sei document-edit-preview ... --json`
 - `sei document-edit-confirm ... --confirm --json`
 - `sei document-quality-check ... --json`
+
+### Cancelamento nativo de documento
+
+- `sei document-cancel-preview <documento> --process-id <processo> --motivo "<motivo>" --json`
+- `sei document-cancel-confirm <documento> --process-id <processo> --motivo "<motivo>" --confirm --confirm-impact --json`
+
+Cancelamento não é exclusão nem cancelamento de assinatura. A canônica só usa
+`acao=documento_cancelar` quando o HTML do nó do documento oferece essa ação,
+submete `frmDocumentoCancelar` com o campo `txaMotivo` e verifica que o
+documento continua na árvore com a marcação de cancelado. Nunca usar
+`documento_excluir` como fallback.
+
+O fluxo é destrutivo e irreversível: exige simultaneamente `--confirm` e
+`--confirm-impact`, além de motivo não vazio. Se qualquer confirmação faltar,
+nenhuma requisição de mutação é feita.
 
 Regra para referencias SEI no corpo HTML:
 
@@ -272,7 +287,7 @@ Esses comandos só entram se o usuário pedir explicitamente o legado ou se houv
 - Nunca copie cookies, tokens, hashes de sessão ou HTML bruto para relatórios,
   commits ou mensagens ao usuário.
 - Antes de reportar a versão, valide `sei --version`; a versão esperada desta
-  skill é `0.8.0`.
+  skill é `0.9.0`.
 
 ## Política de confirmação
 

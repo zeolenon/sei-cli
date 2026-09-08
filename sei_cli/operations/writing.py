@@ -1658,6 +1658,195 @@ def document_create_confirm(
         )
 
 
+def document_cancel_preview(
+    client: Any,
+    numero_ou_id: str,
+    *,
+    motivo: str = "",
+    process_id: str | None = None,
+) -> dict[str, Any]:
+    """Preview native cancellation of a signed document."""
+    operation = "document-cancel-preview"
+    resolved_ids: dict[str, Any] = {}
+    try:
+        if not motivo or not motivo.strip():
+            raise WorkflowViolationError(
+                "Motivo do cancelamento é obrigatório.",
+                details={"expected_option": "--motivo"},
+            )
+
+        context = _context(client)
+        id_documento, id_procedimento, numero_documento = _resolve_document_ids(
+            client,
+            numero_ou_id,
+            id_procedimento=process_id,
+        )
+        preflight, unit_guard = _process_unit_preflight(client, id_procedimento)
+        with unit_guard as switched_to:
+            if switched_to:
+                preflight["switched"] = True
+                preflight["switched_to"] = switched_to
+                context = _context(client)
+
+            docs = client.get_full_document_tree(id_procedimento, expand_all=True)
+            id_documento, docs = _resolve_document_id_with_process(
+                client,
+                id_documento,
+                id_procedimento=id_procedimento,
+                docs=docs,
+            )
+            target = next((item for item in docs if item.id_documento == id_documento), None)
+            if target is None:
+                raise WorkflowViolationError(
+                    f"Documento {numero_ou_id} não encontrado no processo informado."
+                )
+            if not (target.assinado or target.autenticado):
+                raise WorkflowViolationError(
+                    f"Documento {id_documento} ainda não está assinado/autenticado; "
+                    "cancelamento não pode substituir exclusão de rascunho."
+                )
+
+            form_info = client.get_document_cancel_form_info(id_documento, id_procedimento)
+            if not form_info.get("ok"):
+                raise WorkflowViolationError(str(form_info.get("error", "Cancelamento indisponível")))
+
+            resolved_ids = {
+                "id_documento": id_documento,
+                "id_procedimento": id_procedimento,
+                "numero_documento": target.sei_number or numero_documento or numero_ou_id,
+            }
+            return _result(
+                operation=operation,
+                context=context,
+                resolved_ids=resolved_ids,
+                data={
+                    "document": {
+                        "id_documento": target.id_documento,
+                        "numero_documento": target.sei_number,
+                        "nome": target.nome,
+                        "assinado": bool(target.assinado),
+                        "autenticado": bool(target.autenticado),
+                        "origin_unit": target.origin_unit,
+                    },
+                    "cancel_policy": {
+                        "irreversible": True,
+                        "reason_required": True,
+                        "reason_length": len(motivo.strip()),
+                        "document_remains_in_tree": True,
+                        "delete_is_not_fallback": True,
+                    },
+                    "native_form": {
+                        "form_id": form_info.get("form_id"),
+                        "method": form_info.get("method"),
+                        "reason_field": form_info.get("reason_field"),
+                    },
+                    "confirmation_required": 2,
+                    "confirmation_flags": ["--confirm", "--confirm-impact"],
+                },
+                next_actions=[
+                    NextAction(
+                        action="document-cancel-confirm",
+                        label="Cancelar o documento com duas confirmações explícitas",
+                        params={
+                            "numero_ou_id": id_documento,
+                            "process_id": id_procedimento,
+                            "motivo": motivo,
+                            "confirm": False,
+                            "confirm_impact": False,
+                        },
+                    )
+                ],
+                warnings=[],
+            )
+    except Exception as exc:
+        return _error_result(
+            operation=operation,
+            context=locals().get("context"),
+            resolved_ids=resolved_ids,
+            exc=exc,
+        )
+
+
+def document_cancel_confirm(
+    client: Any,
+    numero_ou_id: str,
+    *,
+    motivo: str,
+    process_id: str | None = None,
+    confirm: bool = False,
+    confirm_impact: bool = False,
+) -> dict[str, Any]:
+    """Execute native document cancellation after two confirmations."""
+    operation = "document-cancel-confirm"
+    resolved_ids: dict[str, Any] = {}
+    try:
+        if not confirm or not confirm_impact:
+            raise WorkflowViolationError(
+                "Cancelamento destrutivo exige duas confirmações independentes: "
+                "--confirm e --confirm-impact.",
+                details={
+                    "expected_flags": ["--confirm", "--confirm-impact"],
+                    "confirm": confirm,
+                    "confirm_impact": confirm_impact,
+                },
+            )
+        if not motivo or not motivo.strip():
+            raise WorkflowViolationError(
+                "Motivo do cancelamento é obrigatório.",
+                details={"expected_option": "--motivo"},
+            )
+
+        preview = document_cancel_preview(
+            client,
+            numero_ou_id,
+            motivo=motivo,
+            process_id=process_id,
+        )
+        if not preview.get("ok"):
+            preview["operation"] = operation
+            return preview
+
+        id_documento = str(preview["resolved_ids"]["id_documento"])
+        id_procedimento = str(preview["resolved_ids"]["id_procedimento"])
+        result = client.cancel_document(id_documento, id_procedimento, motivo)
+        if not result.get("verified"):
+            raise WorkflowViolationError(
+                "SEI não confirmou o cancelamento nativo do documento.",
+                details=result,
+            )
+        return _result(
+            operation=operation,
+            context=preview["context"],
+            resolved_ids=preview["resolved_ids"],
+            data={
+                "document": preview["data"]["document"],
+                "cancel_policy": preview["data"]["cancel_policy"],
+                "native_form": preview["data"]["native_form"],
+                "result": result,
+            },
+            next_actions=[
+                NextAction(
+                    action="process-open",
+                    label="Reler a árvore para auditoria do documento cancelado",
+                    params={"numero_ou_id": id_procedimento},
+                ),
+                NextAction(
+                    action="process-history",
+                    label="Consultar o andamento do cancelamento",
+                    params={"numero_ou_id": id_procedimento},
+                ),
+            ],
+            warnings=[],
+        )
+    except Exception as exc:
+        return _error_result(
+            operation=operation,
+            context=locals().get("preview", {}).get("context") if "preview" in locals() else locals().get("context"),
+            resolved_ids=resolved_ids or locals().get("preview", {}).get("resolved_ids"),
+            exc=exc,
+        )
+
+
 def _section_preview(section: Any) -> dict[str, Any]:
     content = section.content or ""
     return {

@@ -1305,6 +1305,28 @@ class SEIClient:
 
     # --- Enhanced document tree with folder expansion ---
 
+    @staticmethod
+    def _extract_document_action_url(
+        arvore_html: str,
+        action: str,
+        id_procedimento: str,
+        id_documento: str,
+    ) -> str | None:
+        """Extract a document action emitted in ``Nos[].acoes``."""
+        decoded = html.unescape(arvore_html).replace('\\"', '"')
+        pattern = re.compile(
+            rf"(controlador\.php\?acao={re.escape(action)}[^\"'\s<>\\]+)"
+        )
+        for match in pattern.finditer(decoded):
+            relative = match.group(1)
+            query = parse_qs(urlparse(relative).query)
+            if (
+                query.get("id_procedimento", [""])[0] == str(id_procedimento)
+                and query.get("id_documento", [""])[0] == str(id_documento)
+            ):
+                return relative
+        return None
+
     def get_actions(
         self,
         id_procedimento: str,
@@ -1368,7 +1390,17 @@ class SEIClient:
 
         # Extract var linkXxx = 'url' patterns
         links = re.findall(r"var\s+(link\w+)\s*=\s*'([^']+)'", r_sel.text)
-        return {name: url for name, url in links}
+        result = {name: url for name, url in links}
+        if id_documento:
+            cancel_url = self._extract_document_action_url(
+                arvore_html,
+                "documento_cancelar",
+                id_procedimento,
+                id_documento,
+            )
+            if cancel_url:
+                result["linkCancelarDocumento"] = cancel_url
+        return result
 
     def alter_process(
         self,
@@ -1758,6 +1790,142 @@ class SEIClient:
             raise RuntimeError("Delete failed: check SEI for details")
 
         return True
+
+    def get_document_cancel_form_info(
+        self,
+        id_documento: str,
+        id_procedimento: str,
+    ) -> dict[str, Any]:
+        """Inspect the native SEI document-cancellation form."""
+        arvore_html = self._navigate_to_arvore(id_procedimento)
+        if not arvore_html:
+            return {
+                "ok": False,
+                "error": f"Processo {id_procedimento} não encontrado ou sessão expirada",
+            }
+
+        cancel_relative = self._extract_document_action_url(
+            arvore_html,
+            "documento_cancelar",
+            id_procedimento,
+            id_documento,
+        )
+        if not cancel_relative:
+            return {
+                "ok": False,
+                "error": (
+                    f"Cancelamento não disponível para o documento {id_documento}. "
+                    "O SEI pode ainda permitir edição/exclusão, ou a unidade atual não é a geradora."
+                ),
+                "id_documento": id_documento,
+                "id_procedimento": id_procedimento,
+            }
+
+        cancel_url = self._sei_url(cancel_relative.replace("&amp;", "&"))
+        response = self._get(cancel_url)
+        soup = BeautifulSoup(response.text, "lxml")
+        form = soup.find("form", {"id": "frmDocumentoCancelar"})
+        if not form:
+            return {
+                "ok": False,
+                "error": "Formulário nativo de cancelamento não encontrado",
+                "cancel_url": cancel_url,
+            }
+
+        reason = form.find("textarea", {"name": "txaMotivo"})
+        if reason is None:
+            return {
+                "ok": False,
+                "error": "Campo nativo de motivo do cancelamento (txaMotivo) não encontrado",
+                "cancel_url": cancel_url,
+            }
+
+        form_action = urljoin(self._sei_url(""), form.get("action") or cancel_relative)
+        form_fields = self._acompanhamento_form_pairs(form)
+        hidden_fields = {
+            str(field.get("name")): str(field.get("value", ""))
+            for field in form.find_all("input", type="hidden")
+            if field.get("name")
+        }
+        return {
+            "ok": True,
+            "cancel_url": cancel_url,
+            "form_action": form_action,
+            "form_id": "frmDocumentoCancelar",
+            "method": (form.get("method") or "post").lower(),
+            "reason_field": "txaMotivo",
+            "hidden_fields": hidden_fields,
+            "form_fields": form_fields,
+            "id_documento": id_documento,
+            "id_procedimento": id_procedimento,
+        }
+
+    def cancel_document(
+        self,
+        id_documento: str,
+        id_procedimento: str,
+        motivo: str,
+    ) -> dict[str, Any]:
+        """Cancel a signed document through SEI's native action."""
+        if not motivo or not motivo.strip():
+            raise ValueError("Motivo do cancelamento não pode ser vazio")
+
+        form_info = self.get_document_cancel_form_info(id_documento, id_procedimento)
+        if not form_info.get("ok"):
+            raise RuntimeError(str(form_info.get("error", "Formulário de cancelamento indisponível")))
+
+        reason_field = str(form_info["reason_field"])
+        pairs = [
+            (name, value)
+            for name, value in form_info.get("form_fields", [])
+            if name != reason_field
+        ]
+        pairs.append((reason_field, motivo))
+        pairs.append(("sbmSalvar", "Salvar"))
+        response = self._post_pairs(str(form_info["form_action"]), pairs)
+        self._control_html = None
+
+        if "login.php" in str(response.url):
+            raise RuntimeError("Sessão expirada durante o cancelamento do documento")
+        error_message = _extract_sei_error_message(
+            BeautifulSoup(response.text, "lxml"), response.text
+        )
+        if error_message:
+            raise RuntimeError(f"SEI rejeitou o cancelamento: {error_message}")
+
+        tree = self._navigate_to_arvore(id_procedimento)
+        decoded_tree = html.unescape(tree or "").replace('\\"', '"')
+        node_match = re.search(
+            rf'new infraArvoreNo\("DOCUMENTO","{re.escape(id_documento)}".*?;',
+            decoded_tree,
+            re.DOTALL,
+        )
+        if not node_match:
+            raise RuntimeError(
+                "Cancelamento não verificado: o documento desapareceu da árvore; "
+                "isso não corresponde ao cancelamento nativo do SEI."
+            )
+        node_html = node_match.group(0).lower()
+        cancelled_marker = any(
+            marker in node_html
+            for marker in ("documento_cancelado", "protocolo_cancelado", "cancelado")
+        )
+        if not cancelled_marker:
+            raise RuntimeError(
+                "Cancelamento não verificado: o documento permaneceu na árvore, "
+                "mas não recebeu a marcação nativa de cancelado."
+            )
+
+        return {
+            "ok": True,
+            "cancelled": True,
+            "verified": True,
+            "id_documento": id_documento,
+            "id_procedimento": id_procedimento,
+            "reason_field": reason_field,
+            "document_remained_in_tree": True,
+            "cancelled_marker": cancelled_marker,
+        }
 
     @staticmethod
     def _acompanhamento_form_pairs(

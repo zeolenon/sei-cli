@@ -22,6 +22,8 @@ from .reading import (
     tracking_group_catalog,
 )
 from .writing import (
+    document_cancel_confirm,
+    document_cancel_preview,
     document_create_confirm,
     document_create_preview,
     document_edit_confirm,
@@ -72,6 +74,8 @@ __all__ = [
     "block_review",
     "document_create_confirm",
     "document_create_preview",
+    "document_cancel_confirm",
+    "document_cancel_preview",
     "document_edit_confirm",
     "document_edit_preview",
     "process_archive_confirm",

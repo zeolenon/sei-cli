@@ -2,15 +2,15 @@
 
 CLI Python para operar o SEI-RN por HTTP puro, sem automação de navegador. A
 superfície atual combina leitura contextual, resumo/histórico, criação e edição
-de rascunhos e ações administrativas com `preview`/`confirm` quando há efeito
-oficial.
+de rascunhos, cancelamento nativo de documentos e ações administrativas com
+`preview`/`confirm` quando há efeito oficial.
 
 > Para contribuir, leia [CONTRIBUTING.md](CONTRIBUTING.md). Use branch + PR
 > conforme a política do repositório.
 
 ## Versão e instalação
 
-A versão atual é **0.8.0**.
+A versão atual é **0.9.0**.
 
 Com `uv`:
 
@@ -26,7 +26,7 @@ python -m pip install -e .
 sei --version
 ```
 
-A saída esperada da versão é equivalente a `sei, version 0.8.0`. O projeto
+A saída esperada da versão é equivalente a `sei, version 0.9.0`. O projeto
 publica wheel e source distribution com a mesma versão declarada em
 `pyproject.toml` e `sei_cli.__version__`.
 
@@ -191,6 +191,8 @@ sei document-create-confirm ... --confirm --json
 sei document-edit-preview ... --json
 sei document-edit-confirm ... --confirm --json
 sei document-quality-check ... --json
+sei document-cancel-preview <documento> --process-id <processo> --motivo "<motivo>" --json
+sei document-cancel-confirm <documento> --process-id <processo> --motivo "<motivo>" --confirm --confirm-impact --json
 sei process-pdf-preview <processo> --json
 sei process-pdf-confirm <processo> --confirm --json
 sei document-pdf-preview <documento> --process-id <processo> --json
@@ -200,6 +202,31 @@ sei process-forward-confirm <processo> <destinos...> --confirm --json
 sei process-conclude-preview <processo> --json
 sei process-conclude-confirm <processo> --confirm --json
 ```
+
+#### Cancelamento nativo de documento
+
+Cancelamento é diferente de excluir o documento e de cancelar somente uma
+assinatura. A ação só fica disponível no SEI quando o próprio HTML do nó
+oferece `acao=documento_cancelar`. O documento permanece na árvore, mas seu
+conteúdo fica inacessível.
+
+O fluxo canônico exige motivo não vazio e duas confirmações independentes:
+
+```bash
+sei document-cancel-preview <documento> \
+  --process-id <processo> \
+  --motivo "Justificativa formal do cancelamento" --json
+
+sei document-cancel-confirm <documento> \
+  --process-id <processo> \
+  --motivo "Justificativa formal do cancelamento" \
+  --confirm --confirm-impact --json
+```
+
+Sem as duas flags (`--confirm` e `--confirm-impact`), nenhuma mutação é
+enviada. A implementação usa o formulário nativo `frmDocumentoCancelar`,
+campo `txaMotivo`, e falha fechado se o documento desaparecer da árvore ou
+não receber a marcação de cancelado. Exclusão nunca é fallback.
 
 Para copiar conteúdo de um documento existente, use `--documento-modelo` em
 vez de tratar `--texto-inicial T` como conteúdo. `N`, `T` e `D` são modos de
