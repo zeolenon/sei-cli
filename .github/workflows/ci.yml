@@ -16,10 +16,10 @@ jobs:
       matrix:
         python: ['3.12', '3.13', '3.14']
     env:
-      SEI_SESSION_PATH: ${{ runner.temp }}/sei-test/session.json
-      SEI_CREDENTIALS_PATH: ${{ runner.temp }}/sei-test/credentials.json
-      SEI_CREATED_PROCESSES_PATH: ${{ runner.temp }}/sei-test/created-processes.json
-      SEI_CREATED_DOCUMENTS_PATH: ${{ runner.temp }}/sei-test/created-documents.json
+      SEI_SESSION_PATH: ${{ github.workspace }}/.ci-test-state/session.json
+      SEI_CREDENTIALS_PATH: ${{ github.workspace }}/.ci-test-state/credentials.json
+      SEI_CREATED_PROCESSES_PATH: ${{ github.workspace }}/.ci-test-state/created-processes.json
+      SEI_CREATED_DOCUMENTS_PATH: ${{ github.workspace }}/.ci-test-state/created-documents.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
