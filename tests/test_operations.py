@@ -6,9 +6,11 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
+import fitz
 from click.testing import CliRunner
 
 from sei_cli.cli import cli
+from sei_cli.document_extraction import extract_document_content
 from sei_cli.models import Block, BlockDocument, DocumentCreated, DocumentType, Process, ProcessList, SystemStatus, TramitarDestino, TramitarForm, TreeDocument
 from sei_cli.models import EditorSection
 from sei_cli.operations import (
@@ -526,14 +528,14 @@ class FakeClient:
     def download_document(self, doc: TreeDocument, output_path: str | None = None) -> bytes | str:
         payloads: dict[str, str] = {
             "48568463": (
-                "TEXT:Relatório do Fiscal de Serviço Operacional.\n"
+                "Relatório do Fiscal de Serviço Operacional.\n"
                 "2º SGT BM João Silva - Fiscal de Operações.\n"
                 "Do dia 15 para o dia 16 de abril de 2026.\n"
                 "Ao Comando do OP 3.\n"
                 "SD BM Maria Souza atuou como condutora.\n"
             ),
             "48568469": (
-                "TEXT:Ofício DPSGP 22/04/2026.\n"
+                "Ofício DPSGP 22/04/2026.\n"
                 "Para conhecimento e registro do reaprazamento de férias do 3º SGT BM João Silva.\n"
             ),
         }
@@ -541,12 +543,15 @@ class FakeClient:
             raise RuntimeError("Download não encontrado")
         if output_path:
             raise RuntimeError("output_path não suportado no fake")
-        return payloads[doc.id_documento].encode("utf-8")
+        with fitz.open() as pdf:
+            page = pdf.new_page(width=900, height=600)
+            page.insert_text((40, 40), payloads[doc.id_documento])
+            return pdf.tobytes()
 
     def read_document_content(self, doc: TreeDocument) -> str:
         payload = self.download_document(doc)
         if isinstance(payload, bytes):
-            return payload[5:].decode("utf-8").strip()
+            return extract_document_content(payload).text
         return payload
 
     def read_relatorio(self, id_documento: str, id_procedimento: str) -> RelatorioServico:
@@ -1186,6 +1191,10 @@ def test_document_read_pdf_supports_binary_extraction() -> None:
     assert result["ok"] is True
     assert result["data"]["documento"]["tipo"] == "pdf"
     assert result["data"]["extraction_method"] in {"read_document_content", "download_document_pdf"}
+    extraction = result["data"]["document_extraction"]
+    assert extraction["extraction_method"] == "pdf_text"
+    assert extraction["page_count"] == 1
+    assert extraction["visual_analysis_required"] is False
     assert result["data"]["semantic_context"]["information_only"] is True
 
 
@@ -4578,7 +4587,7 @@ def test_cli_version_reports_package_version() -> None:
     result = CliRunner().invoke(cli, ["--version"])
 
     assert result.exit_code == 0
-    assert "0.9.0" in result.output
+    assert "1.0.0" in result.output
 
 
 def test_block_compatibility_command_delegates_to_signature_block_read(monkeypatch) -> None:

@@ -1,7 +1,7 @@
 ---
 name: sei
 description: "Operar o SEI com leitura contextual e ações canônicas."
-version: 0.9.0
+version: 1.0.0
 author: Leo Zenon, Herminho
 license: MIT
 platforms: [linux, macos, windows]
@@ -11,7 +11,7 @@ metadata:
     related_skills: []
 ---
 
-Esta skill acompanha a superfície canônica do `sei-cli` 0.9.0. Os comandos
+Esta skill acompanha a superfície canônica do `sei-cli` 1.0.0. Os comandos
 abaixo devem ser executados pelo agente via `terminal`; a skill não expõe
 detalhes internos de HTTP, HTML, sessão ou autenticação.
 
@@ -129,6 +129,8 @@ Essa etapa é somente triagem de metadados: não abrir árvores, documentos ou P
   inventar conteúdo ausente.
 
 ### Criação e edição de rascunho
+
+A edição de documentos usa HTTP pelas canônicas `document-edit-preview/confirm`.
 
 - `sei process-create-preview ... --json`
 - `sei process-create-confirm ... --confirm --json`
@@ -283,11 +285,34 @@ Esses comandos só entram se o usuário pedir explicitamente o legado ou se houv
 
 ## Segurança e higiene
 
+### TLS e reutilização de sessão
+
+O transporte usa `tls.create_verified_context()` com hostname/validade/cadeia
+até uma raiz já confiável. A cadeia pública complementar vem da Let's Encrypt,
+fica restrita ao contexto da conexão e não instala raízes no sistema.
+`PARTIAL_CHAIN` fica desativado; não usar bypass TLS, pins de leaf ou certificados
+arbitrários. A criação do contexto não faz download nem login.
+
+Preservar as rotas canônicas: sessão existente → `inicializar.php` → controle
+e URLs contextuais da árvore atual. Evitar `switch` redundante e pesquisa rápida
+quando o contexto atual já oferece a URL. Preferir um cliente e leituras seriais.
+`batch_mode` reutiliza contexto, mas não impede autenticação automática.
+
+Em inventário estritamente somente leitura, `status` e listagens ainda podem
+fazer login/persistir sessão pelo fallback normal se a sessão expirar. Usar
+guardas que parem antes desse fallback; não presumir um modo read-only inexistente.
+Abrir árvore/processo pode alterar visualização/recebimento: não executar essa
+etapa quando o escopo proíbe esses efeitos sem validação específica.
+Falha TLS deve parar antes de autenticar; não gerar relogins para tratá-la.
+O retry atual é limitado a uma repetição e não implementa backoff. Diferenciar
+expiração real, contexto incorreto e falha de navegação antes de renovar login.
+
+
 - Nenhum valor de credencial deve ser registrado; qualquer credencial eventualmente encontrada deve aparecer somente como `[REDACTED]`.
 - Nunca copie cookies, tokens, hashes de sessão ou HTML bruto para relatórios,
   commits ou mensagens ao usuário.
 - Antes de reportar a versão, valide `sei --version`; a versão esperada desta
-  skill é `0.9.0`.
+  skill é `1.0.0`.
 
 ## Política de confirmação
 
@@ -338,7 +363,7 @@ São fluxos diferentes.
 - Se aparecer erro de releitura do tipo "documentos permanecem pendentes", rode `signature-block-review`; se `remaining_signable_total`/`signable_document_ids` zerou para os documentos selecionados, trate como assinatura aplicada.
 - Em `signature-block-review`, prefira `can_sign_for_current_user`/`signable_document_ids` para decisão operacional; `raw_can_sign` é apenas o sinal bruto da tela do SEI.
 
-Cenário de referência validado: `CMDO PABM APODI -> PAD-PDF`.
+Cenário de referência validado: `<unidade_origem> -> <unidade_destino>`.
 
 ### 3. `process-finalize`
 
@@ -435,9 +460,17 @@ Exemplos:
 
 - `Ofício externo da SEAD - responder até 05/04`
 - `Férias Sd Vinicius - reaprazamento solicitado`
-- `Suprimento serviços Apodi - empenho emitido`
+- `Suprimento de serviços - empenho emitido`
 
 ## Armadilhas importantes
+
+### Nomenclatura e contexto da unidade
+
+Usar nomenclatura vigente conforme catálogo e atos normativos do órgão.
+Nomes documentais não comprovam equivalência histórica 1:1, IDs ou labels SEI.
+Antes de atuar, conferir descrição completa, usuário e ID da unidade; não
+inferir códigos por sigla nem reescrever textos históricos. Marcadores e
+acompanhamentos pertencem ao contexto da unidade em que foram cadastrados.
 
 ### Unidade ambígua
 
@@ -461,7 +494,7 @@ Documento em rascunho pode exigir unidade dona do processo. Documento assinado �
 
 ### Sessão/login
 
-Quando o fluxo estiver correto, o SEI não deve forçar relogin. Se aparecer relogin, tratar como bug de navegação/rota, não como comportamento normal.
+Antes de renovar login, distinguir expiração real da sessão, contexto de unidade incorreto, falha TLS e falha de navegação/rota. Corrigir a rota quando ela causar falso diagnóstico de expiração. Expiração real pode exigir autenticação no fluxo normal; em inventário somente leitura, parar antes de login ou persistência.
 
 ### Gotcha 12 — Lazy-loaded folders hide data
 

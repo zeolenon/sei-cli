@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-import io
 from pathlib import Path
 import re
 import shutil
@@ -46,22 +45,11 @@ def _ocr_png(png: bytes, *, language: str) -> tuple[str, str | None]:
     executable = shutil.which("tesseract")
     if not executable:
         return "", "Tesseract não está instalado; análise visual permanece pendente."
-    try:
-        result = subprocess.run(
-            [executable, "stdin", "stdout", "-l", language, "--psm", "6"],
-            input=png,
-            capture_output=True,
-            timeout=90,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return "", "OCR excedeu o limite de 90 segundos nesta página."
-    except OSError as exc:
-        return "", f"Não foi possível executar Tesseract: {exc}"
-    if result.returncode != 0 and language != "eng":
+    languages = (language, "eng") if language != "eng" else ("eng",)
+    for attempt_language in languages:
         try:
-            fallback = subprocess.run(
-                [executable, "stdin", "stdout", "-l", "eng", "--psm", "6"],
+            result = subprocess.run(
+                [executable, "stdin", "stdout", "-l", attempt_language, "--psm", "6"],
                 input=png,
                 capture_output=True,
                 timeout=90,
@@ -71,14 +59,15 @@ def _ocr_png(png: bytes, *, language: str) -> tuple[str, str | None]:
             return "", "OCR excedeu o limite de 90 segundos nesta página."
         except OSError as exc:
             return "", f"Não foi possível executar Tesseract: {exc}"
-        if fallback.returncode == 0:
-            text = fallback.stdout.decode("utf-8", errors="replace").strip()
-            return text, f"Idioma OCR '{language}' indisponível; usado fallback 'eng'."
-        result = fallback
-    if result.returncode != 0:
-        error = result.stderr.decode("utf-8", errors="replace").strip()
-        return "", f"Tesseract falhou nesta página: {error[:300]}"
-    return result.stdout.decode("utf-8", errors="replace").strip(), None
+        if result.returncode == 0:
+            text = result.stdout.decode("utf-8", errors="replace").strip()
+            warning = (
+                f"OCR com '{language}' falhou; usado fallback 'eng'."
+                if attempt_language != language else None
+            )
+            return text, warning
+    error = result.stderr.decode("utf-8", errors="replace").strip()
+    return "", f"Tesseract falhou nesta página: {error[:300]}"
 
 
 def _extract_image_document(
@@ -89,12 +78,7 @@ def _extract_image_document(
     ocr_language: str,
 ) -> DocumentExtraction:
     """Extract OCR and preserve a standalone image for visual review."""
-    if data.startswith(b"\x89PNG"):
-        suffix = ".png"
-    elif data.startswith(b"\xff\xd8\xff"):
-        suffix = ".jpg"
-    else:
-        suffix = ".bin"
+    suffix = ".png" if data.startswith(b"\x89PNG") else ".jpg"
 
     root = Path(output_dir) if output_dir else Path(tempfile.mkdtemp(prefix="sei-document-images-"))
     root.mkdir(parents=True, exist_ok=True)
@@ -127,13 +111,6 @@ def extract_pdf_content(
     dpi: int = 200,
 ) -> DocumentExtraction:
     """Extract text, OCR image pages, and visual-review artifacts from a PDF."""
-    if data.startswith(b"TEXT:"):
-        return DocumentExtraction(
-            text=data[5:].decode("utf-8").strip(),
-            extraction_method="test_text",
-            page_count=1,
-        )
-
     if data.startswith((b"\x89PNG", b"\xff\xd8\xff")):
         return _extract_image_document(
             data,
@@ -143,12 +120,12 @@ def extract_pdf_content(
         )
 
     try:
-        fitz = __import__("fitz")
+        import fitz
     except ImportError as exc:
         raise RuntimeError("PyMuPDF (fitz) não está disponível para ler o documento.") from exc
 
     try:
-        document = fitz.open(stream=io.BytesIO(data), filetype="pdf")
+        document = fitz.open(stream=data, filetype="pdf")
     except Exception as exc:
         raise RuntimeError(f"Falha ao abrir PDF: {exc}") from exc
 
@@ -160,7 +137,7 @@ def extract_pdf_content(
     page_count = len(document)
     artifact_root: Path | None = Path(output_dir) if output_dir else None
 
-    try:
+    with document:
         for page_number, page in enumerate(document, start=1):
             raw_text = page.get_text("text").strip()
             effective_text = _without_sei_page_header(raw_text)
@@ -175,10 +152,11 @@ def extract_pdf_content(
                     matrix=fitz.Matrix(dpi / 72, dpi / 72),
                     alpha=False,
                 )
-                pixmap.save(str(image_path))
+                png = pixmap.tobytes("png")
+                image_path.write_bytes(png)
                 visual_artifacts.append(str(image_path))
                 ocr_text, warning = _ocr_png(
-                    pixmap.tobytes("png"),
+                    png,
                     language=ocr_language,
                 )
                 ocr_text = _without_sei_page_header(ocr_text)
@@ -201,8 +179,6 @@ def extract_pdf_content(
                 text_parts.append(effective_text)
             elif raw_text:
                 text_parts.append(raw_text)
-    finally:
-        document.close()
 
     text = "\n\n".join(part for part in text_parts if part).strip()
     if image_pages and ocr_pages:

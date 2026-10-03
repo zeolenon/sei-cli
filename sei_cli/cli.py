@@ -325,7 +325,7 @@ def goto_cmd(numero: str, as_json: bool, do_read: bool, unit: str | None) -> Non
     """Navegar direto para um documento ou processo pelo número SEI.
 
     Aceita número de documento SEI (ex: 39860248) ou número de processo
-    (ex: 08810108.001215/2025-10). Usa a pesquisa rápida do SEI.
+    (ex: <numero_processo>). Usa a pesquisa rápida do SEI.
     """
     with SEIClient() as client:
         if unit:
@@ -403,7 +403,7 @@ def goto_cmd(numero: str, as_json: bool, do_read: bool, unit: str | None) -> Non
 def encaminhar_cmd(processo: str, destinos: tuple[str, ...], unit: str | None, fechar: bool, as_json: bool) -> None:
     """Encaminhar processo para uma ou mais unidades.
 
-    PROCESSO: id_procedimento ou número do processo (ex: 08810254.000081/2026-17)
+    PROCESSO: id_procedimento ou número do processo (ex: <numero_processo>)
     DESTINOS: sigla(s) ou nome(s) parcial(is) das unidades destino (aceita múltiplas)
 
     Exemplos:
@@ -496,7 +496,7 @@ def reabrir_cmd(processo: str, unit: str | None, as_json: bool) -> None:
 def concluir_cmd(processos: tuple[str, ...], unit: str | None, as_json: bool) -> None:
     """Concluir um ou mais processos na unidade atual.
 
-    PROCESSOS: ids ou números SEI (ex: 47162626 ou 08810198.000286/2024-52)
+    PROCESSOS: ids ou números SEI (ex: <id_procedimento> ou <numero_processo>)
     """
     import re as _re
     with SEIClient() as client:

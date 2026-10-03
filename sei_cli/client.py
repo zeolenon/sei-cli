@@ -28,7 +28,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from sei_cli import auth
-from sei_cli.document_extraction import extract_document_content
+from sei_cli.document_extraction import DocumentExtraction, extract_document_content
 
 
 def _sanitize_for_iso_8859_1(text: str) -> str:
@@ -630,7 +630,7 @@ class SEIClient:
         1. Look for a direct link with valid hash in the control page
            (works when the process is in the inbox).
         2. Use pesquisa rápida (search) which generates its own valid hash
-           (works for formatted process numbers like 08810198.000066/2026-91,
+           (works for formatted process numbers like <numero_processo>,
            but NOT for bare numeric id_procedimento values).
         """
         # Strategy 1: direct link from control page (preserves valid hash)
@@ -1676,16 +1676,10 @@ class SEIClient:
 
         if isinstance(result, str):
             soup = BeautifulSoup(result, "lxml")
-            return {
-                "text": soup.get_text("\n", strip=True),
-                "extraction_method": "html_text",
-                "page_count": 0,
-                "image_pages": [],
-                "ocr_pages": [],
-                "visual_artifacts": [],
-                "visual_analysis_required": False,
-                "warnings": [],
-            }
+            return DocumentExtraction(
+                text=soup.get_text("\n", strip=True),
+                extraction_method="html_text",
+            ).to_dict()
 
         extraction = extract_document_content(result, document_label=doc.nome)
         return extraction.to_dict()
@@ -3557,16 +3551,6 @@ class SEIClient:
 
         # No iframe found — page might already be the inner content
         return outer_html
-
-    def _open_process_wrapper(self, id_procedimento: str) -> str:
-        """Open procedimento_trabalhar and return the wrapper HTML."""
-        self._ensure_session()
-        url = self._sei_url(
-            f"controlador.php?acao=procedimento_trabalhar"
-            f"&id_procedimento={id_procedimento}"
-        )
-        r = self._get(url)
-        return r.text
 
     def get_tramitar_form(self, id_procedimento: str, _proc_html: str | None = None) -> TramitarForm:
         """Open 'Enviar Processo' form and parse destination units/fields.
@@ -6595,32 +6579,6 @@ class SEIClient:
         vis_url_raw = re.sub(r"&id_documento=\d+", "", vis_url_raw)
         r_vis = self._get(urljoin(self._sei_url(""), vis_url_raw))
         return r_vis.text
-
-    def _find_in_acompanhamento(self, id_procedimento: str) -> str | None:
-        """Search for a process link in Acompanhamento Especial."""
-        html = self._ensure_control()
-        soup = BeautifulSoup(html, "lxml")
-
-        acomp_url = None
-        for a in soup.find_all("a", href=True):
-            if "acompanhamento_listar" in a["href"]:
-                acomp_url = urljoin(self._sei_url(""), a["href"])
-                break
-
-        if not acomp_url:
-            return None
-
-        r = self._get(acomp_url)
-        asoup = BeautifulSoup(r.text, "lxml")
-
-        for a in asoup.find_all("a", href=True):
-            href = a["href"]
-            if "procedimento_trabalhar" in href and id_procedimento in href:
-                self._control_html = None
-                return urljoin(self._sei_url(""), href)
-
-        self._control_html = None
-        return None
 
     def _build_arvore_visualizar_url(
         self,
