@@ -8,9 +8,21 @@ de rascunhos, cancelamento nativo de documentos e ações administrativas com
 > Para contribuir, leia [CONTRIBUTING.md](CONTRIBUTING.md). Use branch + PR
 > conforme a política do repositório.
 
+## Conexão segura e sessão
+
+A conexão exige certificado válido, hostname correto e cadeia até uma raiz já
+confiável. O pacote inclui intermediários públicos da Let's Encrypt para
+completar a cadeia do servidor, sem desativar a validação TLS ou instalar
+raízes no sistema. Não há download de certificados durante a execução.
+
+A navegação, o User-Agent e o fluxo de sessão continuam canônicos. Comandos de
+consulta podem renovar/autenticar a sessão no fallback normal; abrir processos
+pode alterar visualização ou recebimento. A versão 1.0.0 não cria um modo
+estritamente somente leitura, um monitor ou autorização para ações oficiais.
+
 ## Versão e instalação
 
-A versão atual é **0.9.0**.
+A versão atual é **1.0.0**.
 
 Com `uv`:
 
@@ -26,7 +38,7 @@ python -m pip install -e .
 sei --version
 ```
 
-A saída esperada da versão é equivalente a `sei, version 0.9.0`. O projeto
+A saída esperada da versão é equivalente a `sei, version 1.0.0`. O projeto
 publica wheel e source distribution com a mesma versão declarada em
 `pyproject.toml` e `sei_cli.__version__`.
 
@@ -57,7 +69,7 @@ resultados canônicos usam um envelope versionado com `schema_version`, `ok`,
 sei login
 sei status --json
 sei units --json
-sei switch "CMDO PABM APODI" --json
+sei switch "<unidade>" --json
 sei inbox-snapshot --json
 ```
 
@@ -137,7 +149,7 @@ paginada, sem abrir árvores ou documentos não candidatos:
 ```bash
 sei acompanhamento-search --palavras "escada emprestada" --json
 sei acompanhamento-search --grupo "Material / Logística" --json
-sei acompanhamento-search --unit "CMDO PABM APODI" --palavras "escada" --json
+sei acompanhamento-search --unit "<unidade>" --palavras "escada" --json
 sei acompanhamentos --json  # listagem completa sem filtro
 ```
 
@@ -260,9 +272,9 @@ from sei_cli.client import SEIClient
 with SEIClient() as client:
     client.login()
     status = client.status()
-    tree = client.get_full_document_tree("48348237")
-    history = client.get_process_history("48348237", full=True)
-    block = client.get_block("614662")
+    tree = client.get_full_document_tree("<id_sei>")
+    history = client.get_process_history("<id_sei>", full=True)
+    block = client.get_block("<id_sei>")
 ```
 
 Para automações orientadas a intenção, prefira as operações em

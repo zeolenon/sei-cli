@@ -65,8 +65,12 @@ sei-cli/
 ```
 
 #### SSL Note
-The SEI RN server has SSL certificate issues. Use `verify=False` in httpx client.
-Python 3.14 requires explicit SSL bypass.
+Nota histórica do plano v0.1: o cliente usava bypass de certificado.
+A política atual em `auth.create_http_client()` exige validação completa via
+`tls.create_verified_context()`: hostname, validade e caminho até raiz já
+confiável. A cadeia pública complementar está em `sei_cli/certificates/`;
+`PARTIAL_CHAIN` fica desativado. Não usar `verify=False` nem ignorar avisos TLS.
+Esse ajuste não altera rotas, cookies, persistência ou fallback de login.
 
 #### WAF Bypass
 - COTIC-RN WAF bloqueia requests sem User-Agent de browser

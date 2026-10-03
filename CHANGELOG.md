@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.0 — TLS verificado e consolidação de leitura (2026-10-03)
+
+- Substitui o bypass TLS por verificação de certificado, hostname, validade e
+  caminho até uma raiz já confiável. Inclui cadeia pública suplementar da
+  Let's Encrypt; não instala raízes nem baixa certificados em runtime.
+- Desativa partial-chain e acrescenta regressões offline para certificado
+  válido/inválido, hostname incorreto, validade e confiança da raiz.
+- Preserva rotas canônicas, User-Agent, redirects manuais e reutilização de
+  cookie; documenta a diferença entre inicializar sessão, relogin e navegação.
+- Consolida extração de PDF/imagens e fallback OCR por idioma; testa PDFs
+  gerados localmente e rejeita o formato fictício interno `TEXT:`.
+- Remove módulo experimental de editor por navegador sem integração com a
+  CLI e helpers internos sem uso; edição continua no fluxo HTTP canônico.
+- Atualiza skill pública e exemplos genéricos, sem dados de unidades ou
+  processos particulares. Instruções de órgãos permanecem no contexto local.
+- Mantém as operações da 0.9.0, incluindo cancelamento nativo com motivo,
+  `--confirm` e `--confirm-impact`. Nenhuma ação administrativa real faz parte
+  dos testes deste release.
+
+## 0.9.0 — Cancelamento nativo de documentos (2026-09-08)
+
+- Integra o commit oficial `e21e858294f7b0ad217176ff2f0ffa3979f08171` (#33).
+- Adiciona `document-cancel-preview` e `document-cancel-confirm`, com motivo e
+  confirmações `--confirm`/`--confirm-impact`; verifica permanência na árvore.
+- Exclusão não é fallback. Atualiza documentação, skill e testes oficiais.
+
 ## 0.8.0 — OCR e leitura visual de Anexos
 
 ### Acompanhamento Especial
@@ -31,7 +57,7 @@
 ### Validação do release
 
 - Suíte offline com pytest.
-- Verificação real no processo `08810116.003584/2025-48`:
+- Verificação real no processo `<numero_processo>`:
   17/17 documentos lidos, 7 documentos com conteúdo visual identificado e
   artefatos visuais verificados no disco.
 
@@ -68,7 +94,7 @@
 - `document-create-*` pode seguir na unidade atual em processo recebido, deixando o próprio SEI rejeitar apenas se a ação realmente não existir.
 - `_get_editor_url()` passa a expandir pastas lazy-loaded antes de falhar e tenta reconstruir `arvore_visualizar` com `infra_unidade_atual`/`infra_hash` atuais quando o documento aparece como `about:blank`.
 - Documenta explicitamente que `--texto-inicial` aceita apenas `N/T/D`: `T` é Texto Padrão do SEI, enquanto cópia de documento existente deve usar `--documento-modelo <numero_sei>` e portanto `D`.
-- Validação real no SEI: processo encaminhado `08810196.000046/2026-30`, documento criado `49382032` / SEI `40929963`, editado na seção `220` pela unidade `CMDO PABM APODI` sem troca para unidade autora.
+- Validação real no SEI: processo encaminhado `<numero_processo>`, documento criado `<id_sei>` / SEI `<id_sei>`, editado na seção `220` pela unidade `<unidade>` sem troca para unidade autora.
 
 ### Blocos de assinatura
 
@@ -96,8 +122,8 @@
 Exemplo:
 
 ```bash
-sei document-create-preview 49286513 despacho --documento-modelo 40842131 --json
-sei document-create-confirm 49286513 despacho --documento-modelo 40842131 --confirm --json
+sei document-create-preview <id_sei> despacho --documento-modelo <id_sei> --json
+sei document-create-confirm <id_sei> despacho --documento-modelo <id_sei> --confirm --json
 ```
 
 ### Edição sem escape HTML
@@ -112,7 +138,7 @@ sei document-create-confirm 49286513 despacho --documento-modelo 40842131 --conf
 
 - `document-edit-preview` evita selecionar cabeçalho, timbre, metadados e rodapé como seção de corpo.
 - A heurística foi validada em documentos multi-seção, incluindo Encaminhamento e Justificativa.
-- Matriz real validada no processo de teste `08810254.000138/2026-88` / `49286513`:
+- Matriz real validada no processo de teste `<numero_processo>` / `<id_sei>`:
 
 | Tipo | Seção de corpo validada |
 | --- | --- |
@@ -141,15 +167,15 @@ sei document-create-confirm 49286513 despacho --documento-modelo 40842131 --conf
 
 - Suíte local: `pytest tests/ -q`.
 - Checagem de diff: `git diff --check`.
-- Validação real no SEI, unidade `CMDO PABM APODI`, usuário `LEO ZENON TASSI`.
+- Validação real no SEI, unidade `<unidade>`, usuário `usuário autorizado`.
 - Validação independente do Lago no Slack:
-  - fontes lidas com sucesso: `40851082`, `40842124`, `40842131`
-  - cópias por Documento Modelo lidas com sucesso: `40851470`, `40851104`, `40851127`
+  - fontes lidas com sucesso: `<id_sei>`, `<id_sei>`, `<id_sei>`
+  - cópias por Documento Modelo lidas com sucesso: `<id_sei>`, `<id_sei>`, `<id_sei>`
   - nenhum documento mostrou HTML escapado literal como `&lt;p&gt;`, `&amp;lt;p`, `&lt;strong&gt;` ou `&lt;table`
   - os pares de conteúdo foram equivalentes por leitura textual:
-    - `40851082` -> `40851470`
-    - `40842124` -> `40851104`
-    - `40842131` -> `40851127`
+    - `<id_sei>` -> `<id_sei>`
+    - `<id_sei>` -> `<id_sei>`
+    - `<id_sei>` -> `<id_sei>`
 
 ### Observações
 

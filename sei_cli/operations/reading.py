@@ -1008,22 +1008,6 @@ def _text_excerpt(text: str, *, limit: int = 280) -> str:
     return f"{compact[: limit - 3].rstrip()}..."
 
 
-def _extract_pdf_content_from_bytes(
-    data: bytes,
-    *,
-    document_label: str = "documento",
-) -> dict[str, Any]:
-    return extract_document_content(
-        data,
-        document_label=document_label,
-    ).to_dict()
-
-
-def _extract_pdf_text_from_bytes(data: bytes) -> str:
-    """Backward-compatible text-only wrapper around document extraction."""
-    return _extract_pdf_content_from_bytes(data)["text"]
-
-
 def _read_tree_document_text(
     client: Any,
     doc: TreeDocument | None,
@@ -1067,10 +1051,10 @@ def _read_tree_document_text(
         document_label: str,
     ) -> tuple[str, str, dict[str, Any]]:
         if isinstance(payload, bytes):
-            details = _extract_pdf_content_from_bytes(
+            details = extract_document_content(
                 payload,
                 document_label=document_label,
-            )
+            ).to_dict()
             return str(details.pop("text", "")), method, details
         if isinstance(payload, str):
             return payload, f"{method}_text", {}
@@ -2522,35 +2506,6 @@ def _fast_suggested_text(process: Process) -> str:
         parts.append("teve novidade")
     short = " - ".join(part.strip(" .") for part in parts if part).strip()
     return _sanitize_marker_text(short) if short else ""
-
-
-def _select_context_document(docs: list[TreeDocument]) -> TreeDocument | None:
-    if not docs:
-        return None
-
-    def _score(item: tuple[int, TreeDocument]) -> tuple[int, int]:
-        index, doc = item
-        name = _normalize_marker_name(doc.nome or "")
-        keyword_score = 0
-        for token, score in (
-            ("despacho", 60),
-            ("oficio", 55),
-            ("parecer", 50),
-            ("manifest", 45),
-            ("requer", 40),
-            ("solicit", 35),
-            ("relatorio", 30),
-            ("inform", 25),
-            ("parte generica", 20),
-        ):
-            if token in name:
-                keyword_score = max(keyword_score, score)
-        signed_score = 5 if doc.assinado else 0
-        recency_score = index
-        return keyword_score + signed_score + recency_score, recency_score
-
-    index, selected = max(enumerate(docs), key=_score)
-    return docs[index] if selected else None
 
 
 def _context_document_candidates(docs: list[TreeDocument]) -> list[TreeDocument]:

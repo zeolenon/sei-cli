@@ -8,6 +8,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from sei_cli.config import orgao_to_value
+from sei_cli.tls import create_verified_context
 from sei_cli.models import Credentials, LoginStatus
 
 UA = (
@@ -27,7 +28,7 @@ def create_http_client() -> httpx.Client:
         follow_redirects=False,
         headers={"User-Agent": UA},
         timeout=60,
-        verify=False,
+        verify=create_verified_context(),
     )
 
 
