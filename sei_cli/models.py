@@ -219,6 +219,7 @@ class TreeDocument:
     assinado: bool = False
     autenticado: bool = False
     assinaturas: list[SignatureInfo] = field(default_factory=list)
+    url_evidence: dict[str, str | bool] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

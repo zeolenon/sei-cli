@@ -12,15 +12,15 @@
 ## Padrões Obrigatórios
 
 ### Sessão HTTP
-- `_ensure_session()` valida sessão antes de qualquer operação (GET antes de POST)
-- `batch_mode()` context manager para operações em lote (evita re-login)
-- `_navigate_with_retry()` faz retry automático em caso de sessão expirada
+- `_ensure_session()` reutiliza o controle validado ou consulta a sessão existente pela inicialização canônica, sem login automático.
+- `batch_mode()` reutiliza o contexto validado do cliente em operações seriais.
+- `_navigate_with_retry()` é um helper de compatibilidade; falha de sessão ou transporte interrompe a navegação, sem renovar login.
 - `_harvest_hashes()` coleta `infra_hash` de toda resposta HTML — SEI usa hashes em TODAS as URLs
 
 ### Auth
-- Credenciais vêm do Bitwarden (alias `sei` / `sisbom`)
+- Credenciais usam a configuração canônica do `sei-cli` e só são consultadas para autenticação explícita.
 - NUNCA hardcodar credenciais
-- Auto-login: se sessão expirou, re-login transparente + retry 1x
+- Login é explícito. Falha inconclusiva conserva os cookies e não comprova expiração no servidor.
 
 ### Ambientes (Unidades)
 - Para editar/assinar/encaminhar: DEVE estar no ambiente correto
@@ -30,17 +30,17 @@
 - `listar_unidades_usuario()` — navega form `infra_trocar_unidade`, POSTs com orgão CBM (28), parseia `selecionarUnidade(id)` do resultado
 - **Form parsing:** O SEI usa `selecionarUnidade(ID)"/>` + `<td>SIGLA</td>` (input, não anchor)
 
-### Comando `goto`
-- SEMPRE usar `sei goto <numero>` para navegar (aceita doc ou processo)
-- `--read` lê conteúdo inline
-- Evitar percorrer listas manualmente
+### Uso canônico
+- Preferir `process-open`, `process-read` e `document-read` às rotas legadas quando houver uma operação canônica para a tarefa.
+- Usar somente URLs nativas retornadas pelo SEI; não reconstruir rotas de `about:blank`.
+- Leitura textual não abre o editor. Uma atualização contextual não repete a mesma URL em contexto inalterado.
 
 ## Convenções de Código
 
 - Tipo annotations em todas as funções públicas
 - Docstrings em português para comandos CLI, inglês para internals
 - Erros HTTP: logar com `rich.console` e retornar gracefully (não crashar)
-- Novos comandos: adicionar em `sei_cli/commands/` como click group
+- Novos comandos: manter a CLI em `sei_cli/cli.py` e as operações canônicas em `sei_cli/operations/`.
 
 ## Testes
 
@@ -56,4 +56,4 @@
 - **`reabrir_processo`:** 3-tier strategy (Nos[0] href → full HTML search → AJAX). O JS `reabrirProcesso()` é gerado inline SOMENTE quando o processo está fechado na unidade atual — não existe em JS externo
 - **Troca de unidade:** Form `frmInfraSelecaoUnidade` com POST `selInfraOrgaoUnidade=28` (CBM) lista sub-unidades, depois POST `selInfraUnidades=ID` efetua a troca
 - O login form usa campo `hdnToken` que muda a cada request
-- Rate limiting informal: não fazer mais de ~5 req/s ou a sessão cai
+- Preferir consultas seriais e respeitar os erros de sessão/transporte; não supor um limite garantido de requisições por segundo.

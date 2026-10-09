@@ -10,7 +10,7 @@ from sei_cli.client import SEIClient
 
 def _make_process_create_client(
     response_html: str,
-    response_url: str = "https://sei.rn.gov.br/sei/controlador.php",
+    response_url: str = "https://sei.example.test/sei/controlador.php",
 ) -> SEIClient:
     client = SEIClient.__new__(SEIClient)
     client._control_html = "cached"
@@ -51,7 +51,7 @@ def test_create_process_detects_sei_alert_error() -> None:
     )
 
     with pytest.raises(RuntimeError, match="Assuntos não são suficientes"):
-        client.create_process("100000595", especificacao="Informacao a PRF")
+        client.create_process("910000004", especificacao="Informacao a PRF")
 
 
 def test_create_process_rejects_unconfirmed_empty_response() -> None:
@@ -65,22 +65,22 @@ def test_create_process_rejects_unconfirmed_empty_response() -> None:
     )
 
     with pytest.raises(RuntimeError, match="nao confirmou a criacao"):
-        client.create_process("100000595", especificacao="Informacao a PRF")
+        client.create_process("910000004", especificacao="Informacao a PRF")
 
 
 def test_create_process_serializes_all_preloaded_subjects_like_sei_lupa_select() -> None:
     client = _make_process_create_client(
         """
         <html>
-          <head><title>SEI - 08810000.000001/2026-00</title></head>
-          <body><a href="controlador.php?id_procedimento=49999999">Processo</a></body>
+          <head><title>SEI - 90000000.000002/2026-00</title></head>
+          <body><a href="controlador.php?id_procedimento=81000136">Processo</a></body>
         </html>
         """
     )
 
-    result = client.create_process("100000595", especificacao="Informacao a PRF")
+    result = client.create_process("910000004", especificacao="Informacao a PRF")
 
-    assert result["numero"] == "08810000.000001/2026-00"
+    assert result["numero"] == "90000000.000002/2026-00"
     assert client.submitted_data["hdnAssuntos"] == (
         "402±082.7.1 - REQUERIMENTOS¥400±082.6.1 - REQUERIMENTOS"
     )

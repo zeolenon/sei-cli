@@ -1,3 +1,4 @@
+from bs4 import BeautifulSoup
 """Tests for automatic unit switching when accessing restricted processes."""
 
 import re
@@ -11,29 +12,29 @@ from sei_cli.models import SystemStatus, Unit
 
 ARVORE_RESTRICTED = '''
 <script>
-Nos[0] = new infraArvoreNo("PROCESSO","48568435",null,"controlador.php?acao=arvore_visualizar&id_procedimento=48568435","ifrVisualizacao","08810254.000108/2026-71","Pessoal","svg/processo.svg?18","svg/processo.svg?18","svg/processo.svg?18",true,true,"noVisitado",null,"noVisitado","08810254.000108/2026-71");
-Nos[0].html = 'Processo aberto somente na unidade <a alt="COMANDO DO POSTO AVANÇADO" title="COMANDO DO POSTO AVANÇADO" class="ancoraSigla">CBM - COBM - CMDO PABM APODI</a>.<br />';
-Nos[1] = new infraArvoreNo("DOCUMENTO","48568466","48568435","about:blank","ifrConteudoVisualizacao","Memorando 5 (40182408)","Memorando 5","svg/documento_interno.svg?18","svg/documento_interno.svg?18","svg/documento_interno.svg?18",true,false,null,null,"noVisitado","40182408");
-Nos[2] = new infraArvoreNo("DOCUMENTO","48568542","48568435","about:blank","ifrConteudoVisualizacao","Memorando 6 (40182482)","Memorando 6","svg/documento_interno.svg?18","svg/documento_interno.svg?18","svg/documento_interno.svg?18",true,false,null,null,"noVisitado","40182482");
-NosAcoes[0] = new infraArvoreAcao("BASE_CONHECIMENTO","BC","48568435","#","ifrVisualizacao","Base","svg/bc.svg?18",true);
-NosAcoes[1] = new infraArvoreAcao("UNIDADE_GERADORA","UG48568466","48568466","#",null,"COMANDO DO POSTO AVANÇADO BOMBEIRO MILITAR DE APODI / RN",null,true,"CBM - COBM - CMDO PABM APODI");
-NosAcoes[2] = new infraArvoreAcao("UNIDADE_GERADORA","UG48568542","48568542","#",null,"COMANDO DO POSTO AVANÇADO BOMBEIRO MILITAR DE APODI / RN",null,true,"CBM - COBM - CMDO PABM APODI");
+Nos[0] = new infraArvoreNo("PROCESSO","81000111",null,"controlador.php?acao=arvore_visualizar&id_procedimento=81000111","ifrVisualizacao","90000000.000033/2026-00","Pessoal","svg/processo.svg?18","svg/processo.svg?18","svg/processo.svg?18",true,true,"noVisitado",null,"noVisitado","90000000.000033/2026-00");
+Nos[0].html = 'Processo aberto somente na unidade <a alt="COMANDO DO POSTO AVANÇADO" title="COMANDO DO POSTO AVANÇADO" class="ancoraSigla">CMDO UNIDADE TESTE</a>.<br />';
+Nos[1] = new infraArvoreNo("DOCUMENTO","81000115","81000111","about:blank","ifrConteudoVisualizacao","Memorando 5 (81000048)","Memorando 5","svg/documento_interno.svg?18","svg/documento_interno.svg?18","svg/documento_interno.svg?18",true,false,null,null,"noVisitado","81000048");
+Nos[2] = new infraArvoreNo("DOCUMENTO","81000119","81000111","about:blank","ifrConteudoVisualizacao","Memorando 6 (81000049)","Memorando 6","svg/documento_interno.svg?18","svg/documento_interno.svg?18","svg/documento_interno.svg?18",true,false,null,null,"noVisitado","81000049");
+NosAcoes[0] = new infraArvoreAcao("BASE_CONHECIMENTO","BC","81000111","#","ifrVisualizacao","Base","svg/bc.svg?18",true);
+NosAcoes[1] = new infraArvoreAcao("UNIDADE_GERADORA","UG81000115","81000115","#",null,"Comando da Unidade Sintética",null,true,"CMDO UNIDADE TESTE");
+NosAcoes[2] = new infraArvoreAcao("UNIDADE_GERADORA","UG81000119","81000119","#",null,"Comando da Unidade Sintética",null,true,"CMDO UNIDADE TESTE");
 </script>
 '''
 
 ARVORE_UNRESTRICTED = '''
 <script>
-Nos[0] = new infraArvoreNo("PROCESSO","48568435",null,"controlador.php?acao=arvore_visualizar&id_procedimento=48568435","ifrVisualizacao","08810254.000108/2026-71","Pessoal","svg/processo.svg?18","svg/processo.svg?18","svg/processo.svg?18",true,true,"noVisitado",null,"noVisitado","08810254.000108/2026-71");
-Nos[1] = new infraArvoreNo("DOCUMENTO","48568466","48568435","controlador.php?acao=arvore_visualizar&id_documento=48568466","ifrConteudoVisualizacao","Memorando 5 (40182408)","Memorando 5","svg/documento_interno.svg?18","svg/documento_interno.svg?18","svg/documento_interno.svg?18",true,false,null,null,"noVisitado","40182408");
-NosAcoes[0] = new infraArvoreAcao("GERAR_PDF","GP","48568435","controlador.php?acao=procedimento_gerar_pdf&id_procedimento=48568435&arvore=1&infra_hash=abc123","ifrVisualizacao","Gerar PDF","svg/pdf.svg?18",true);
+Nos[0] = new infraArvoreNo("PROCESSO","81000111",null,"controlador.php?acao=arvore_visualizar&id_procedimento=81000111","ifrVisualizacao","90000000.000033/2026-00","Pessoal","svg/processo.svg?18","svg/processo.svg?18","svg/processo.svg?18",true,true,"noVisitado",null,"noVisitado","90000000.000033/2026-00");
+Nos[1] = new infraArvoreNo("DOCUMENTO","81000115","81000111","controlador.php?acao=arvore_visualizar&id_documento=81000115","ifrConteudoVisualizacao","Memorando 5 (81000048)","Memorando 5","svg/documento_interno.svg?18","svg/documento_interno.svg?18","svg/documento_interno.svg?18",true,false,null,null,"noVisitado","81000048");
+NosAcoes[0] = new infraArvoreAcao("GERAR_PDF","GP","81000111","controlador.php?acao=procedimento_gerar_pdf&id_procedimento=81000111&arvore=1&infra_hash=abc123","ifrVisualizacao","Gerar PDF","svg/pdf.svg?18",true);
 </script>
 '''
 
 ARVORE_MIXED_CONTEXTUAL = '''
 <script>
-Nos[0] = new infraArvoreNo("PROCESSO","99999",null,"controlador.php?acao=arvore_visualizar&id_procedimento=99999&infra_unidade_atual=110008367","ifrVisualizacao","proc","tipo","svg","svg","svg",true,true,null,null,null,"proc");
-Nos[1] = new infraArvoreNo("DOCUMENTO","111","99999","controlador.php?acao=arvore_visualizar&id_documento=111&id_procedimento=99999&infra_unidade_atual=110008367","ifrConteudoVisualizacao","Doc acessível","Doc acessível","svg/documento_interno.svg","svg","svg",true,false,null,null,null,"111");
-Nos[1].src = 'controlador.php?acao=documento_visualizar&id_documento=111&id_procedimento=99999&infra_unidade_atual=110008367';
+Nos[0] = new infraArvoreNo("PROCESSO","99999",null,"controlador.php?acao=arvore_visualizar&id_procedimento=99999&infra_unidade_atual=910000015","ifrVisualizacao","proc","tipo","svg","svg","svg",true,true,null,null,null,"proc");
+Nos[1] = new infraArvoreNo("DOCUMENTO","111","99999","controlador.php?acao=arvore_visualizar&id_documento=111&id_procedimento=99999&infra_unidade_atual=910000015","ifrConteudoVisualizacao","Doc acessível","Doc acessível","svg/documento_interno.svg","svg","svg",true,false,null,null,null,"111");
+Nos[1].src = 'controlador.php?acao=documento_visualizar&id_documento=111&id_procedimento=99999&infra_unidade_atual=910000015';
 Nos[2] = new infraArvoreNo("DOCUMENTO","222","99999","about:blank","ifrConteudoVisualizacao","Doc de outra unidade","Doc de outra unidade","svg/documento_interno.svg","svg","svg",true,false,null,null,null,"222");
 NosAcoes[0] = new infraArvoreAcao("UNIDADE_GERADORA","UG222","222","#",null,"UNIDADE AUTORA",null,true,"CBM - UNIDADE AUTORA");
 </script>
@@ -55,7 +56,7 @@ Nos[0].html = 'Processo aberto somente na unidade <a class="ancoraSigla">CBM - D
 Nos[1] = new infraArvoreNo("DOCUMENTO","111","99999","about:blank","ifrConteudoVisualizacao","Doc1","Doc1","svg","svg","svg",true,false,null,null,null,"111");
 Nos[2] = new infraArvoreNo("DOCUMENTO","222","99999","about:blank","ifrConteudoVisualizacao","Doc2","Doc2","svg","svg","svg",true,false,null,null,null,"222");
 NosAcoes[0] = new infraArvoreAcao("UNIDADE_GERADORA","UG111","111","#",null,"1º CAT MOSSORÓ",null,true,"CBM - DAT - 1º CAT (MOSSORÓ)");
-NosAcoes[1] = new infraArvoreAcao("UNIDADE_GERADORA","UG222","222","#",null,"PABM APODI",null,true,"CBM - COBM - CMDO PABM APODI");
+NosAcoes[1] = new infraArvoreAcao("UNIDADE_GERADORA","UG222","222","#",null,"UNIDADE TESTE A",null,true,"CMDO UNIDADE TESTE");
 </script>
 '''
 
@@ -66,7 +67,7 @@ class TestDetectUnitRestriction:
 
     def test_detects_restricted_process(self):
         result = self.client._detect_unit_restriction(ARVORE_RESTRICTED)
-        assert result == "CBM - COBM - CMDO PABM APODI"
+        assert result == "CMDO UNIDADE TESTE"
 
     def test_no_restriction_on_accessible_process(self):
         result = self.client._detect_unit_restriction(ARVORE_UNRESTRICTED)
@@ -88,15 +89,15 @@ class TestDetectDocumentUnits:
     def test_maps_docs_to_units(self):
         result = self.client._detect_document_units(ARVORE_RESTRICTED)
         assert result == {
-            "48568466": "CBM - COBM - CMDO PABM APODI",
-            "48568542": "CBM - COBM - CMDO PABM APODI",
+            "81000115": "CMDO UNIDADE TESTE",
+            "81000119": "CMDO UNIDADE TESTE",
         }
 
     def test_multi_unit_docs(self):
         result = self.client._detect_document_units(ARVORE_MULTI_UNIT)
         assert result == {
             "111": "CBM - DAT - 1º CAT (MOSSORÓ)",
-            "222": "CBM - COBM - CMDO PABM APODI",
+            "222": "CMDO UNIDADE TESTE",
         }
 
     def test_no_ug_on_unrestricted(self):
@@ -137,24 +138,24 @@ class TestAutoUnitSwitch:
         from sei_cli.models import SystemStatus, Unit
         mock_status.return_value = SystemStatus(
             valid=True,
-            unidade_sigla="CBM - DAT - SEC  - 1°SAT/1°CAT",
+            unidade_sigla="UNIDADE TESTE",
             unidade_descricao="SECRETARIA 1° SAT",
             usuario="TEST",
             ultimo_acesso="",
         )
         # list_units called by _find_accessible_unit AND _can_switch_to
         mock_units.return_value = [
-            Unit(sigla="CBM - COBM - CMDO PABM APODI", descricao="PABM", link="110008367"),
-            Unit(sigla="CBM - DAT - SEC  - 1°SAT/1°CAT", descricao="SAT", link="110007086"),
+            Unit(sigla="CMDO UNIDADE TESTE", descricao="PABM", link="910000015"),
+            Unit(sigla="UNIDADE TESTE", descricao="SAT", link="910000013"),
         ]
 
         with self.client._auto_unit_switch(ARVORE_RESTRICTED) as switched:
-            assert switched == "CBM - COBM - CMDO PABM APODI"
+            assert switched == "CMDO UNIDADE TESTE"
 
         # Should have switched to target and back
         assert mock_switch.call_count == 2
-        mock_switch.assert_any_call("CBM - COBM - CMDO PABM APODI")
-        mock_switch.assert_any_call("CBM - DAT - SEC  - 1°SAT/1°CAT")
+        mock_switch.assert_any_call("CMDO UNIDADE TESTE")
+        mock_switch.assert_any_call("UNIDADE TESTE")
 
     @patch.object(SEIClient, '_find_open_units_from_history', return_value=[])
     @patch.object(SEIClient, 'list_units')
@@ -184,7 +185,7 @@ class TestAutoUnitSwitch:
         from sei_cli.models import SystemStatus
         mock_status.return_value = SystemStatus(
             valid=True,
-            unidade_sigla="CBM - COBM - CMDO PABM APODI",
+            unidade_sigla="CMDO UNIDADE TESTE",
             unidade_descricao="PABM",
             usuario="TEST",
             ultimo_acesso="",
@@ -203,14 +204,14 @@ class TestAutoUnitSwitch:
         from sei_cli.models import SystemStatus, Unit
         mock_status.return_value = SystemStatus(
             valid=True,
-            unidade_sigla="CBM - DAT - SEC  - 1°SAT/1°CAT",
+            unidade_sigla="UNIDADE TESTE",
             unidade_descricao="SAT",
             usuario="TEST",
             ultimo_acesso="",
         )
         mock_units.return_value = [
-            Unit(sigla="CBM - COBM - CMDO PABM APODI", descricao="PABM", link="110008367"),
-            Unit(sigla="CBM - DAT - SEC  - 1°SAT/1°CAT", descricao="SAT", link="110007086"),
+            Unit(sigla="CMDO UNIDADE TESTE", descricao="PABM", link="910000015"),
+            Unit(sigla="UNIDADE TESTE", descricao="SAT", link="910000013"),
         ]
 
         with pytest.raises(ValueError):
@@ -219,7 +220,7 @@ class TestAutoUnitSwitch:
 
         # Should still have tried to restore
         assert mock_switch.call_count == 2
-        mock_switch.assert_any_call("CBM - DAT - SEC  - 1°SAT/1°CAT")
+        mock_switch.assert_any_call("UNIDADE TESTE")
 
     @patch.object(SEIClient, 'switch_unit')
     @patch.object(SEIClient, 'list_units')
@@ -229,31 +230,31 @@ class TestAutoUnitSwitch:
         mock_status.side_effect = [
             SystemStatus(
                 valid=True,
-                unidade_sigla="CBM - DAT - SEC  - 1°SAT/1°CAT",
+                unidade_sigla="UNIDADE TESTE",
                 unidade_descricao="SAT",
                 usuario="TEST",
                 ultimo_acesso="",
             ),
             SystemStatus(
                 valid=True,
-                unidade_sigla="PAD-PDF",
+                unidade_sigla="BETA DESTINO",
                 unidade_descricao="PAD",
                 usuario="TEST",
                 ultimo_acesso="",
             ),
         ]
         mock_units.return_value = [
-            Unit(sigla="CBM - COBM - CMDO PABM APODI", descricao="PABM", link="110008367"),
-            Unit(sigla="CBM - DAT - SEC  - 1°SAT/1°CAT", descricao="SAT", link="110007086"),
+            Unit(sigla="CMDO UNIDADE TESTE", descricao="PABM", link="910000015"),
+            Unit(sigla="UNIDADE TESTE", descricao="SAT", link="910000013"),
         ]
 
         with self.client._auto_unit_switch(ARVORE_RESTRICTED) as switched:
-            assert switched == "CBM - COBM - CMDO PABM APODI"
+            assert switched == "CMDO UNIDADE TESTE"
 
         assert mock_switch.call_count == 3
         assert mock_switch.mock_calls[-2:] == [
-            call("CBM - DAT - SEC  - 1°SAT/1°CAT"),
-            call("CBM - DAT - SEC  - 1°SAT/1°CAT"),
+            call("UNIDADE TESTE"),
+            call("UNIDADE TESTE"),
         ]
 
 
@@ -269,26 +270,26 @@ class TestSwitchUnit:
     ):
         client = SEIClient.__new__(SEIClient)
         client._fresh_control = MagicMock(return_value="<html></html>")
-        client._sei_url = lambda path: f"https://sei.rn.gov.br/sei/{path}"
-        client._current_unit_id = "110008367"
+        client._sei_url = lambda path: f"https://sei.example.test/sei/{path}"
+        client._current_unit_id = "910000015"
         client._control_html = None
         client._menu_links = {}
         client._persist_session = MagicMock()
-        client.status = MagicMock(return_value=SystemStatus(valid=True, unidade_sigla="CBM - COBM - CMDO PABM APODI"))
+        client.status = MagicMock(return_value=SystemStatus(valid=True, unidade_sigla="CMDO UNIDADE TESTE"))
         client._post = MagicMock()
 
         switch_response = MagicMock()
-        switch_response.url = "https://sei.rn.gov.br/sei/controlador.php?acao=infra_trocar_unidade&infra_unidade_atual=110008367"
+        switch_response.url = "https://sei.example.test/sei/controlador.php?acao=infra_trocar_unidade&infra_unidade_atual=910000015"
         switch_response.text = "<html></html>"
         client._get = MagicMock(return_value=switch_response)
 
-        mock_switch_link.return_value = "https://sei.rn.gov.br/sei/controlador.php?acao=infra_trocar_unidade&infra_unidade_atual=110008367"
+        mock_switch_link.return_value = "https://sei.example.test/sei/controlador.php?acao=infra_trocar_unidade&infra_unidade_atual=910000015"
         mock_units_page.return_value = [
-            Unit(sigla="CBM - COBM - CMDO PABM APODI", descricao="PABM", link="110008367"),
+            Unit(sigla="CMDO UNIDADE TESTE", descricao="PABM", link="910000015"),
         ]
         mock_switch_form.return_value = ("controlador.php", {})
 
-        status = client.switch_unit("CBM - COBM - CMDO PABM APODI")
+        status = client.switch_unit("CMDO UNIDADE TESTE")
 
         assert status.valid is True
         client._post.assert_not_called()
@@ -309,8 +310,8 @@ class TestSwitchUnit:
     ):
         client = SEIClient.__new__(SEIClient)
         client._fresh_control = MagicMock(return_value="<html></html>")
-        client._sei_url = lambda path: f"https://sei.rn.gov.br/sei/{path}"
-        client._current_unit_id = "110006929"
+        client._sei_url = lambda path: f"https://sei.example.test/sei/{path}"
+        client._current_unit_id = "910000012"
         client._control_html = None
         client._menu_links = {}
         client._persist_session = MagicMock()
@@ -318,28 +319,28 @@ class TestSwitchUnit:
         client._is_valid_control_html = MagicMock(side_effect=[False, True])
 
         switch_response = MagicMock()
-        switch_response.url = "https://sei.rn.gov.br/sei/controlador.php?acao=infra_trocar_unidade&infra_unidade_atual=110006929"
+        switch_response.url = "https://sei.example.test/sei/controlador.php?acao=infra_trocar_unidade&infra_unidade_atual=910000012"
         switch_response.text = "<html>post ok</html>"
         control_response = MagicMock()
         control_response.text = "<html>control invalid</html>"
         client._get = MagicMock(side_effect=[switch_response, control_response])
         client._post = MagicMock(return_value=switch_response)
 
-        mock_switch_link.return_value = "https://sei.rn.gov.br/sei/controlador.php?acao=infra_trocar_unidade&infra_unidade_atual=110006929"
+        mock_switch_link.return_value = "https://sei.example.test/sei/controlador.php?acao=infra_trocar_unidade&infra_unidade_atual=910000012"
         mock_units_page.return_value = [
-            Unit(sigla="CBM - COBM - CMDO PABM APODI", descricao="PABM", link="110008367"),
+            Unit(sigla="CMDO UNIDADE TESTE", descricao="PABM", link="910000015"),
         ]
         mock_switch_form.return_value = ("controlador.php", {})
         mock_parse_status.side_effect = [
-            SystemStatus(valid=True, unidade_sigla="CBM - COBM - CMDO PABM APODI"),
-            SystemStatus(valid=True, unidade_sigla="CBM - COBM - CMDO PABM APODI"),
+            SystemStatus(valid=True, unidade_sigla="CMDO UNIDADE TESTE"),
+            SystemStatus(valid=True, unidade_sigla="CMDO UNIDADE TESTE"),
         ]
         mock_menu_links.return_value = {}
 
-        status = client.switch_unit("CBM - COBM - CMDO PABM APODI")
+        status = client.switch_unit("CMDO UNIDADE TESTE")
 
         assert status.valid is True
-        assert status.unidade_sigla == "CBM - COBM - CMDO PABM APODI"
+        assert status.unidade_sigla == "CMDO UNIDADE TESTE"
 
 
 class TestFindAccessibleUnit:
@@ -353,10 +354,10 @@ class TestFindAccessibleUnit:
         """Strategy 1: direct 'Processo aberto somente na unidade' match."""
         from sei_cli.models import Unit
         mock_units.return_value = [
-            Unit(sigla="CBM - COBM - CMDO PABM APODI", descricao="PABM", link="1"),
+            Unit(sigla="CMDO UNIDADE TESTE", descricao="PABM", link="1"),
         ]
         result = self.client._find_accessible_unit(ARVORE_RESTRICTED)
-        assert result == "CBM - COBM - CMDO PABM APODI"
+        assert result == "CMDO UNIDADE TESTE"
 
     @patch.object(SEIClient, '_find_open_units_from_history', return_value=[])
     @patch.object(SEIClient, 'list_units')
@@ -365,10 +366,10 @@ class TestFindAccessibleUnit:
         from sei_cli.models import Unit
         # Multi-unit: process-level restriction says '1º CAT' but user has PABM
         mock_units.return_value = [
-            Unit(sigla="CBM - COBM - CMDO PABM APODI", descricao="PABM", link="1"),
+            Unit(sigla="CMDO UNIDADE TESTE", descricao="PABM", link="1"),
         ]
         result = self.client._find_accessible_unit(ARVORE_MULTI_UNIT)
-        assert result == "CBM - COBM - CMDO PABM APODI"
+        assert result == "CMDO UNIDADE TESTE"
 
     @patch.object(SEIClient, '_find_open_units_from_history')
     @patch.object(SEIClient, 'list_units')
@@ -379,7 +380,7 @@ class TestFindAccessibleUnit:
             Unit(sigla="UNIT-X", descricao="X", link="1"),
         ]
         mock_hist.return_value = ["UNIT-Y", "UNIT-X", "UNIT-Z"]
-        # ARVORE_RESTRICTED has about:blank docs but user doesn't have PABM APODI
+        # ARVORE_RESTRICTED has about:blank docs but user doesn't have UNIDADE TESTE A
         result = self.client._find_accessible_unit(ARVORE_RESTRICTED)
         assert result == "UNIT-X"
 
@@ -402,35 +403,35 @@ class TestIsProcessInaccessible:
 
 
 class TestNavigateToArvore:
-    def test_retries_contextual_search_after_partial_direct_tree(self):
+    def test_retries_search_after_partial_native_tree(self):
         client = SEIClient.__new__(SEIClient)
-        client._sei_url = lambda path: f"https://sei.rn.gov.br/sei/{path}"
+        client._sei_url = lambda path: f"https://sei.example.test/sei/{path}"
         client._ensure_session = MagicMock()
-        client._navigate_to_process_page = MagicMock(return_value=None)
         client._control_html = None
 
         page = '<html><iframe name="ifrArvore" src="arvore-direta"></iframe></html>'
+        client._navigate_to_process_page = MagicMock(return_value=BeautifulSoup(page, "lxml"))
         direct_response = MagicMock(text=page)
         direct_tree = MagicMock(text=ARVORE_RESTRICTED)
         contextual_tree = MagicMock(text=ARVORE_MIXED_CONTEXTUAL)
-        client._get = MagicMock(side_effect=[direct_response, direct_tree, contextual_tree])
+        client._get = MagicMock(side_effect=[direct_tree, contextual_tree])
         client.search = MagicMock(return_value=page)
 
         result = client._navigate_to_arvore("99999")
 
         assert result == ARVORE_MIXED_CONTEXTUAL
         client.search.assert_called_once_with("99999")
-        assert client._get.call_count == 3
+        assert client._get.call_count == 2
 
     def test_keeps_partial_tree_when_no_contextual_route_exists(self):
         client = SEIClient.__new__(SEIClient)
-        client._sei_url = lambda path: f"https://sei.rn.gov.br/sei/{path}"
+        client._sei_url = lambda path: f"https://sei.example.test/sei/{path}"
         client._ensure_session = MagicMock()
-        client._navigate_to_process_page = MagicMock(return_value=None)
         client._control_html = None
         page = '<html><iframe name="ifrArvore" src="arvore"></iframe></html>'
+        client._navigate_to_process_page = MagicMock(return_value=BeautifulSoup(page, "lxml"))
         client._get = MagicMock(
-            side_effect=[MagicMock(text=page), MagicMock(text=ARVORE_RESTRICTED)]
+            side_effect=[MagicMock(text=ARVORE_RESTRICTED)]
         )
         client.search = MagicMock(side_effect=RuntimeError("search unavailable"))
 

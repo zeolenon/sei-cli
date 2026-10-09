@@ -89,7 +89,7 @@
 
 | Método | Linhas | Status | Quando Usar |
 |--------|--------|--------|-------------|
-| `login()` | 10 | ⚠️ Privado em prática | Chamado automaticamente via `_ensure_session()` |
+| `login()` | 10 | Autenticação explícita | `_ensure_session()` reutiliza a sessão existente e interrompe falhas sem login automático |
 | `close()` | 2 | ⚠️ Raro | Cleanup manual (context manager é preferível) |
 | `status()` | 5 | ✅ Ativo | Verificar login status, autenticidade |
 | `switch_unit()` | 50 | ✅ Ativo | Trocar unidade SEI (wrapper mais limpo que `trocar_unidade()`) |

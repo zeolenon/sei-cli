@@ -134,7 +134,7 @@ No teste real de Encaminhamento, a seção correta de corpo foi `1062`; as seç�
 
 **Data:** 2026-04-23
 
-Teste executado no processo `08810254.000138/2026-88` / `49286513`, criando e editando cada tipo com marcador único. Todos os documentos validados por `document-read` sem ocorrência de `&lt;p`, `&amp;lt;`, `&lt;br` ou `&amp;amp;lt`.
+Teste executado no processo `90000000.000036/2026-00` / `81000130`, criando e editando cada tipo com marcador único. Todos os documentos validados por `document-read` sem ocorrência de `&lt;p`, `&amp;lt;`, `&lt;br` ou `&amp;amp;lt`.
 
 | Tipo | Seção de corpo validada |
 | --- | --- |
@@ -167,7 +167,7 @@ Observações:
 
 ### Problema
 
-O método `_execute_sign_form` tinha `txtUsuario = "LEO ZENON TASSI"` e `hdnIdUsuario = "100066959"` hardcoded — credenciais do desenvolvedor original. A tentativa de assinatura falhava silenciosamente: o SEI retornava o formulário novamente (erro de autenticação) mas a lógica de fallback interpretava isso como sucesso.
+O método `_execute_sign_form` tinha `txtUsuario = "Sintético Pessoa 05"` e `hdnIdUsuario = "910000008"` hardcoded — credenciais do desenvolvedor original. A tentativa de assinatura falhava silenciosamente: o SEI retornava o formulário novamente (erro de autenticação) mas a lógica de fallback interpretava isso como sucesso.
 
 Além disso, `selCargoFuncao` era hardcoded como `"2\xba Tenente QOEM BM"` e não havia como configurar o cargo do usuário.
 
@@ -186,7 +186,7 @@ Adicionar ao `~/.config/sei/credentials.json`:
 ```json
 {
   "cargo": "Tenente-Coronel QOEM BM",
-  "id_usuario": "100039182"
+  "id_usuario": "910000007"
 }
 ```
 

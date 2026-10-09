@@ -29,13 +29,13 @@ class FakeSearchClient:
         assert grupo == "Material / Logística"
         return [
             AcompanhamentoEspecial(
-                numero="08810254.000239/2025-78",
+                numero="90000000.000044/2025-00",
                 tipo="Material: Movimentação de Material Permanente",
                 descricao="Report: Escada extensível danificada.",
                 id_procedimento="123",
-                link="https://sei.rn.gov.br/sei/controlador.php?id_procedimento=123",
+                link="https://sei.example.test/sei/controlador.php?id_procedimento=123",
                 grupo="Material / Logística",
-                marcadores=["Marcador / Equipamentos Operacional"],
+                marcadores=["Marcador sintético 48"],
                 id_acompanhamento="77",
             )
         ]
@@ -60,4 +60,4 @@ def test_cli_acompanhamento_search_emits_structured_metadata(monkeypatch: Any) -
     payload = json.loads(result.output)
     assert payload["total"] == 1
     assert payload["resultados"][0]["descricao"] == "Report: Escada extensível danificada."
-    assert payload["resultados"][0]["marcadores"] == ["Marcador / Equipamentos Operacional"]
+    assert payload["resultados"][0]["marcadores"] == ["Marcador sintético 48"]

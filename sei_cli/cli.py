@@ -881,7 +881,7 @@ def block_create_cmd(descricao: str, unidade_destino: str, as_json: bool) -> Non
             raise SystemExit(1)
 
     with SEIClient() as client:
-        client.login()
+        client.status()
         numero = client.create_block(descricao, unit_id)
 
     result = {"ok": True, "numero": numero, "descricao": descricao, "unidade_id": unit_id}
@@ -906,7 +906,7 @@ def block_add_cmd(
 ) -> None:
     """Include a document in a bloco de assinatura."""
     with SEIClient() as client:
-        client.login()
+        client.status()
         result = client.add_document_to_block(
             id_procedimento, id_documento, block_numero,
             disponibilizar=disponibilizar,
@@ -924,7 +924,7 @@ def block_add_cmd(
 def block_disponibilizar_cmd(block_numero: str, as_json: bool) -> None:
     """Disponibilizar (make available) a bloco de assinatura."""
     with SEIClient() as client:
-        client.login()
+        client.status()
         result = client.disponibilizar_block(block_numero)
     if as_json:
         _emit(result, True)
@@ -939,7 +939,7 @@ def block_disponibilizar_cmd(block_numero: str, as_json: bool) -> None:
 def block_cancelar_cmd(block_numero: str, as_json: bool) -> None:
     """Cancel disponibilização of a bloco de assinatura."""
     with SEIClient() as client:
-        client.login()
+        client.status()
         result = client.cancelar_disponibilizacao_block(block_numero)
     if as_json:
         _emit(result, True)
@@ -954,7 +954,7 @@ def block_cancelar_cmd(block_numero: str, as_json: bool) -> None:
 def block_delete_cmd(block_numero: str, as_json: bool) -> None:
     """Delete an empty bloco de assinatura."""
     with SEIClient() as client:
-        client.login()
+        client.status()
         try:
             client.delete_block(block_numero)
         except RuntimeError as e:
@@ -975,7 +975,7 @@ def block_delete_cmd(block_numero: str, as_json: bool) -> None:
 def block_devolver_cmd(block_numero: str, as_json: bool) -> None:
     """Devolver (return) a received bloco de assinatura to the sender."""
     with SEIClient() as client:
-        client.login()
+        client.status()
         result = client.devolver_block(block_numero)
     if as_json:
         _emit(result, True)
@@ -991,7 +991,7 @@ def block_devolver_cmd(block_numero: str, as_json: bool) -> None:
 def block_remove_cmd(id_documento: str, block_numero: str, as_json: bool) -> None:
     """Remove a document from a bloco de assinatura."""
     with SEIClient() as client:
-        client.login()
+        client.status()
         result = client.remove_document_from_block(id_documento, block_numero)
     if as_json:
         _emit(result, True)
@@ -1030,7 +1030,7 @@ def read_relatorio_cmd(
     from sei_cli.relatorio_parser import summarize as _summarize, to_dict
 
     with SEIClient() as client:
-        client.login()
+        client.status()
         if unit:
             client.switch_unit(unit)
         r = client.read_relatorio(id_documento, id_procedimento)
@@ -1064,7 +1064,7 @@ def authenticate_cmd(
     the SEI UI labels it "Autenticação de Documento".
     """
     with SEIClient() as client:
-        client.login()
+        client.status()
         if unit:
             client.switch_unit(unit)
         results = client.authenticate_documents(list(id_documentos), id_procedimento)
@@ -1104,7 +1104,7 @@ def sign_cmd(
     (ex: "cargo": "Tenente-Coronel QOEM BM").
     """
     with SEIClient() as client:
-        client.login()
+        client.status()
         if unit:
             client.switch_unit(unit)
         results = []

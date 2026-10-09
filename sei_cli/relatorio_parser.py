@@ -5,7 +5,7 @@ documents: personnel (with DO/Ordinário/Extraordinário/Permuta status),
 vehicles, armament, occurrences, guard/patrol schedules, and service notes.
 
 The HTML uses consistent CSS classes and table structures across all
-PABM Apodi relatórios. Section markers (A-I, 1ª-8ª PARTE) are always
+synthetic example relatórios. Section markers (A-I, 1ª-8ª PARTE) are always
 in <p class="Texto_Justificado_Recuo_Primeira_Linha">.
 """
 
@@ -76,7 +76,7 @@ class RelatorioServico:
     posto_fiscal: str = ""
     data_inicio: str = ""  # DD/MM/YYYY
     data_fim: str = ""
-    unidade: str = ""  # e.g. PABM - Apodi RN / 3°GBM
+    unidade: str = ""  # e.g. UNIDADE TESTE
 
     # Personnel
     militares: list[Militar] = field(default_factory=list)
@@ -128,7 +128,7 @@ def _norm(text: str) -> str:
 
 
 def _parse_rank_name(text: str) -> tuple[str, str]:
-    """Split '2° SGT BM Vilson' into (rank, name).
+    """Split '2° SGT BM Sintético Fiscal' into (rank, name).
     
     Handles: SD BM, CB BM, 3º SGT BM, 2° SGT BM, 1° SGT BM,
     ST BM, 2° TEN, 1° TEN, CAP, MAJ, TC, CEL
@@ -271,7 +271,7 @@ def _parse_header(soup: BeautifulSoup, r: RelatorioServico) -> None:
     for p in soup.find_all("p"):
         text = _norm(p.get_text())
 
-        # Fiscal name: "2° SGT BM Vilson - Fiscal de Operações"
+        # Fiscal name: "2° SGT BM Sintético Fiscal - Fiscal de Operações"
         m = re.search(r"(.+?)\s*-?\s*Fiscal de Opera", text)
         if m and not r.fiscal:
             raw = _norm(m.group(1)).rstrip(" (")
@@ -288,7 +288,7 @@ def _parse_header(soup: BeautifulSoup, r: RelatorioServico) -> None:
             r.data_inicio = f"{int(dia1):02d}/{mes_num:02d}/{ano}"
             r.data_fim = f"{int(dia2):02d}/{mes_num:02d}/{ano}"
 
-        # Unit: "Ao Comando do PABM - Apodi RN / 3°GBM"
+        # Unit: "Ao Comando do UNIDADE TESTE"
         m = re.search(r"Ao Comando do (.+?),\s*relat", text)
         if m and not r.unidade:
             r.unidade = _norm(m.group(1))
@@ -536,7 +536,7 @@ def _parse_passagem(soup: BeautifulSoup, r: RelatorioServico) -> None:
     text = _text_between(soup, "8ª PARTE", "")
     text = text.replace("Passagem de serviço:", "").strip()
 
-    # "Passei o serviço ... ao meu substituto legal, o 1° SGT BM Leandro"
+    # "Passei o serviço ... ao meu substituto legal, o 1° SGT BM Sintético Substituto"
     m = re.search(
         r"substituto\s+legal\s*,?\s*o\s+(.+?)(?:,\s*com|\.)",
         text, re.IGNORECASE,
@@ -552,7 +552,7 @@ def _parse_passagem(soup: BeautifulSoup, r: RelatorioServico) -> None:
         r.data_passagem = f"{int(dia):02d}/{mes_num:02d}/{ano}"
 
     # Fiscal who passed: from the signature line
-    # "Antonio Vilson de Souza - 2° SGT QPBM"
+    # "Sintético Fiscal - 2° SGT QPBM"
     m = re.search(r"([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)\s*-\s*(\d°?\s*SGT|SD|CB|ST|TEN|CAP)", text)
     if m:
         r.passagem_de = _norm(m.group(0).split("-")[0])

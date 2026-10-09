@@ -44,7 +44,7 @@ VALIDATION_ERROR_HTML = """
 
 def _make_client() -> SEIClient:
     client = SEIClient.__new__(SEIClient)
-    client.base_url = SEIClient.BASE
+    client.base_url = "https://sei.example.test"
     client._hash_pool = {}
     client._control_html = None
     client._menu_links = {}
@@ -57,7 +57,7 @@ def _make_client() -> SEIClient:
 
 def _mock_response(
     text: str,
-    url: str = "https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar",
+    url: str = "https://sei.example.test/sei/controlador.php?acao=arvore_visualizar",
 ) -> MagicMock:
     response = MagicMock()
     response.text = text
@@ -86,7 +86,7 @@ class TestReopenProcess:
 
         assert html == ARVORE_VIS_REOPEN
         mock_get.assert_called_once_with(
-            "https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_procedimento=12345&infra_hash=aaa"
+            "https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_procedimento=12345&infra_hash=aaa"
         )
 
     @patch.object(SEIClient, "_navigate_to_arvore")
@@ -136,7 +136,7 @@ class TestReopenProcess:
 
         assert self.client.reabrir_processo("12345") is True
         mock_get.assert_called_once_with(
-            "https://sei.rn.gov.br/sei/controlador.php?acao=procedimento_reabrir&id_procedimento=12345&infra_hash=bbb"
+            "https://sei.example.test/sei/controlador.php?acao=procedimento_reabrir&id_procedimento=12345&infra_hash=bbb"
         )
 
     @patch.object(SEIClient, "_navigate_to_arvore_visualizar")

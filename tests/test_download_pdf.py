@@ -21,7 +21,7 @@ ARVORE_WITH_PDF_URL = """
 var Nos = [];
 Nos[0] = {
   'acoes': [
-    '<a href="controlador.php?acao=procedimento_gerar_pdf&amp;acao_origem=arvore_visualizar&amp;id_procedimento=12345&amp;arvore=1&amp;infra_sistema=100000100&amp;infra_unidade_atual=110008367&amp;infra_hash=abcdef">Gerar PDF do Processo</a>'
+    '<a href="controlador.php?acao=procedimento_gerar_pdf&amp;acao_origem=arvore_visualizar&amp;id_procedimento=12345&amp;arvore=1&amp;infra_sistema=100000100&amp;infra_unidade_atual=910000015&amp;infra_hash=abcdef">Gerar PDF do Processo</a>'
   ]
 };
 </script>
@@ -48,7 +48,7 @@ ARVORE_WITH_PROCESS_AND_OTHER_DOC_URL = """
 var Nos = [];
 Nos[0] = {
   'acoes': [
-    '<a href="controlador.php?acao=procedimento_gerar_pdf&amp;acao_origem=arvore_visualizar&amp;id_procedimento=12345&amp;arvore=1&amp;infra_sistema=100000100&amp;infra_unidade_atual=110008367&amp;infra_hash=abcdef">Gerar PDF do Processo</a>'
+    '<a href="controlador.php?acao=procedimento_gerar_pdf&amp;acao_origem=arvore_visualizar&amp;id_procedimento=12345&amp;arvore=1&amp;infra_sistema=100000100&amp;infra_unidade_atual=910000015&amp;infra_hash=abcdef">Gerar PDF do Processo</a>'
   ]
 };
 Nos[1] = {
@@ -96,7 +96,7 @@ class FakeResponse:
         content: bytes = b"",
         status_code: int = 200,
         content_type: str = "text/html; charset=utf-8",
-        url: str = "https://sei.rn.gov.br/sei/controlador.php",
+        url: str = "https://sei.example.test/sei/controlador.php",
     ) -> None:
         self.text = text
         self.content = content
@@ -107,7 +107,7 @@ class FakeResponse:
 def make_client() -> SEIClient:
     """Create a SEIClient with mocked internals."""
     client = SEIClient.__new__(SEIClient)
-    client.base_url = "https://sei.rn.gov.br"
+    client.base_url = "https://sei.example.test"
     client._control_html = None
     client._menu_links = {}
     client._editor_hiddens = {}
@@ -191,7 +191,7 @@ def test_download_pdf_raises_on_login_redirect() -> None:
     client = make_client()
     login_response = FakeResponse(
         text="<html><input name='pwdSenha'/></html>",
-        url="https://sei.rn.gov.br/sip/login.php",
+        url="https://sei.example.test/sip/login.php",
     )
     with patch.object(client, "_navigate_to_arvore", return_value=ARVORE_WITH_PDF_URL), \
          patch.object(client, "_get", return_value=login_response):

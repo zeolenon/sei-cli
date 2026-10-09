@@ -12,8 +12,11 @@ import subprocess
 import sys
 import tempfile
 from typing import Any
+
+import httpx
 import unicodedata
 
+from sei_cli.auth import SessionAccessError
 from sei_cli.document_extraction import extract_document_content
 from sei_cli.models import Block, BlockDocument, Process, TreeDocument
 from sei_cli.relatorio_parser import (
@@ -27,7 +30,9 @@ from .contracts import NextAction, OperationResult
 from .errors import (
     BlockNotFoundError,
     DocumentNotFoundError,
+    DocumentAccessError,
     DocumentUnavailableError,
+    DocumentURLUnavailableError,
     ParseError,
     ProcessNotFoundError,
     UnitAccessRequiredError,
@@ -54,6 +59,8 @@ def _context_best_effort(
 ) -> dict[str, Any]:
     try:
         return _context(client)
+    except (SessionAccessError, httpx.HTTPError):
+        raise
     except Exception:
         context = dict(fallback or {})
         if assumed_unit:
@@ -62,6 +69,7 @@ def _context_best_effort(
         if "valid" not in context:
             context["valid"] = False
         return context
+
 
 
 def _result(
@@ -90,6 +98,8 @@ def _error_result(
     resolved_ids: dict[str, Any] | None = None,
     exc: Exception,
 ) -> dict[str, Any]:
+    if isinstance(exc, (SessionAccessError, httpx.HTTPError)):
+        context = {**(context or {}), "valid": False}
     return OperationResult(
         ok=False,
         operation=operation,
@@ -136,6 +146,8 @@ def _tree_document(doc: TreeDocument) -> dict[str, Any]:
         "assinado": doc.assinado,
         "autenticado": doc.autenticado,
     }
+    if doc.url_evidence:
+        d["url_evidence"] = dict(doc.url_evidence)
     if doc.assinaturas:
         d["assinaturas"] = [
             {"signer": s.signer, "role": s.role, "unit": s.unit, "kind": s.kind}
@@ -144,51 +156,39 @@ def _tree_document(doc: TreeDocument) -> dict[str, Any]:
     return d
 
 
+def _usable_document_url(value: str | None) -> bool:
+    return bool(value and value.strip() and value.strip().casefold() != "about:blank")
+
+
 def _classify_document_read_error(doc: TreeDocument, exc: Exception) -> dict[str, Any]:
     error = error_from_exception(exc)
+    result = {"code": error.code, "message": error.message, "retryable": error.retryable, "details": {
+        **error.details, "url_evidence": dict(doc.url_evidence),
+        "src_url_present": _usable_document_url(doc.src_url),
+        "tree_url_present": _usable_document_url(doc.arvore_url),
+    }}
+    if isinstance(exc, (SessionAccessError, httpx.HTTPError)):
+        return result
+    if isinstance(exc, DocumentURLUnavailableError):
+        return {**result, "code": "document_url_unavailable", "retryable": False}
     normalized = unicodedata.normalize("NFKD", str(exc or ""))
     normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch)).casefold()
-    document_url = str(doc.src_url or "").casefold()
-    access_markers = (
-        "about:blank",
-        "sem download url",
-        "sem url",
-        "nao tem acesso",
-        "não tem acesso",
-        "acesso restrito",
-        "unidade atual",
-        "processo requer unidade",
-        "privado",
-        "sigiloso",
-        "restrito",
-    )
-    if not doc.src_url or document_url == "about:blank" or any(
-        marker in normalized or marker in document_url for marker in access_markers
-    ):
-        if "privado" in normalized:
-            code = "private_access"
-        elif "sigiloso" in normalized:
-            code = "classified_access"
-        elif "restrito" in normalized:
-            code = "restricted_access"
-        else:
-            code = "document_unavailable_in_current_unit"
-        return {
-            "code": code,
-            "message": error.message,
-            "retryable": error.retryable,
-            "details": {
-                **error.details,
-                "origin_unit": doc.origin_unit,
-                "origin_description": doc.origin_description,
-            },
-        }
-    return {
-        "code": error.code,
-        "message": error.message,
-        "retryable": error.retryable,
-        "details": error.details,
-    }
+    # A missing URL does not establish a permission restriction. Preserve
+    # typed restrictions and explicit server/client restriction messages first.
+    restriction_codes = {"document_unavailable_in_current_unit", "private_access", "classified_access", "restricted_access"}
+    markers = ("nao tem acesso", "acesso restrito", "indisponivel na unidade atual", "bloqueado pela unidade atual", "processo requer unidade", "privado", "sigiloso", "restrito", "aberto somente na unidade")
+    if error.code in restriction_codes or any(marker in normalized for marker in markers):
+        code = error.code if error.code in restriction_codes else (
+            "private_access" if "privado" in normalized else
+            "classified_access" if "sigiloso" in normalized else
+            "restricted_access" if "restrito" in normalized else "document_unavailable_in_current_unit")
+        return {**result, "code": code, "details": {
+            **result["details"], "origin_unit": doc.origin_unit, "origin_description": doc.origin_description,
+        }}
+    missing_url_markers = ("link de visualizacao nao encontrado", "no download url", "sem url", "sem download url")
+    if not _usable_document_url(doc.src_url) and any(marker in normalized for marker in missing_url_markers):
+        return {**result, "code": "document_url_unavailable", "retryable": False}
+    return result
 
 
 def _document_restriction_preview(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -287,29 +287,24 @@ def _resolve_document_id_with_process(
 
 
 def _refresh_tree_document(
-    client: Any,
-    doc: TreeDocument | None,
-    *,
-    id_documento: str,
-    id_procedimento: str,
-) -> tuple[TreeDocument | None, str]:
-    if doc and doc.sei_number:
-        resolved = client.search_document(doc.sei_number)
-        if resolved:
-            refreshed_id_documento, refreshed_process_id = resolved
-            refreshed_docs = client.get_full_document_tree(refreshed_process_id)
-            refreshed_doc = next((item for item in refreshed_docs if item.id_documento == refreshed_id_documento), None)
-            if refreshed_doc:
-                return refreshed_doc, refreshed_process_id
-
-    refreshed_docs = client.get_full_document_tree(id_procedimento)
-    refreshed_doc = next((item for item in refreshed_docs if item.id_documento == id_documento), None)
-    return refreshed_doc, id_procedimento
+    client: Any, doc: TreeDocument | None, *, id_documento: str, id_procedimento: str,
+) -> tuple[TreeDocument | None, str, str | None]:
+    # One current process-tree refresh. Native navigation already searches if
+    # necessary; do not search a document and then rebuild the same tree again.
+    reader = getattr(client, "_get_full_document_tree_context", None)
+    if callable(reader):
+        docs, tree_html = reader(id_procedimento, expand_all=True)
+    else:
+        docs, tree_html = client.get_full_document_tree(id_procedimento), None
+    target = next((item for item in docs if item.id_documento == id_documento), None)
+    return target, id_procedimento, tree_html
 
 
 def _find_process_metadata(client: Any, id_procedimento: str, numero_processo: str | None) -> Process | None:
     try:
         processes = client.list_processes()
+    except (SessionAccessError, httpx.HTTPError):
+        raise
     except Exception:
         return None
     for process in processes.recebidos + processes.gerados:
@@ -318,6 +313,7 @@ def _find_process_metadata(client: Any, id_procedimento: str, numero_processo: s
         if numero_processo and process.numero == numero_processo:
             return process
     return None
+
 
 
 def _process_ref_matches(process: Process, ref: str) -> bool:
@@ -421,6 +417,8 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
                 action_value = action_reader(id_procedimento)
                 if isinstance(action_value, dict):
                     action_map = action_value
+            except (SessionAccessError, httpx.HTTPError):
+                raise
             except Exception:
                 pass
             current_unit_action = any(
@@ -465,6 +463,7 @@ def _process_unit_preflight(client: Any, id_procedimento: str) -> tuple[dict[str
     )
 
 
+
 def _unique_strings(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -486,9 +485,12 @@ def _safe_get_actions(client: Any, id_procedimento: str, id_documento: str | Non
         return {}
     try:
         actions = getter(id_procedimento, id_documento)
+    except (SessionAccessError, httpx.HTTPError):
+        raise
     except Exception:
         return {}
     return actions or {}
+
 
 
 def _has_action(actions: dict[str, str], *, key: str | None = None, token: str | None = None) -> bool:
@@ -1063,98 +1065,114 @@ def _read_tree_document_text(
             details={"id_documento": id_documento},
         )
 
-    if doc and doc.src_url and (
-        callable(read_document_content_details) or callable(read_document_content)
-    ):
-        try:
-            return _read_client_document(doc)
-        except Exception as exc:
-            if _is_session_expiry(exc) and hasattr(client, "_ensure_session"):
-                client._ensure_session()
-                try:
-                    return _read_client_document(doc)
-                except Exception:
-                    pass
-            refreshed_doc, refreshed_process_id = _refresh_tree_document(
-                client,
-                doc,
-                id_documento=id_documento,
-                id_procedimento=id_procedimento,
-            )
-            if refreshed_doc and refreshed_doc.src_url:
-                try:
-                    return _read_client_document(refreshed_doc)
-                except Exception:
-                    pass
-            last_error = exc
-        else:
-            last_error = None
-    else:
-        last_error = None
+    attempted_urls: set[str] = set()
+    restriction_codes = {"document_unavailable_in_current_unit", "private_access", "classified_access", "restricted_access"}
 
-    if doc and doc.tipo.lower() == "interno":
-        try:
-            return client.read_document(id_documento, id_procedimento), "read_document", {}
-        except Exception as exc:
-            if _is_session_expiry(exc) and hasattr(client, "_ensure_session"):
-                client._ensure_session()
-                try:
-                    return client.read_document(id_documento, id_procedimento), "read_document_session_retry", {}
-                except Exception:
-                    pass
-            refreshed_doc, refreshed_process_id = _refresh_tree_document(
-                client,
-                doc,
-                id_documento=id_documento,
-                id_procedimento=id_procedimento,
-            )
-            if refreshed_doc:
-                try:
-                    return client.read_document(refreshed_doc.id_documento, refreshed_process_id), "read_document_retry", {}
-                except Exception:
-                    if refreshed_doc.src_url:
-                        return _read_client_document(refreshed_doc)
-            raise
+    def _check_terminal(exc: Exception) -> None:
+        if isinstance(exc, (SessionAccessError, httpx.HTTPError)):
+            raise exc
+        if _is_session_expiry(exc):
+            raise SessionAccessError("Leitura interrompida por sessão/contexto inacessível; sem autenticação automática.") from exc
 
-    if doc and doc.tipo.lower() in {"pdf", "documento", "externo"}:
-        downloader = getattr(client, "download_document", None)
-        if not callable(downloader):
-            raise ParseError(
-                "Cliente nao suporta download de documento para leitura binaria.",
-                details={"id_documento": id_documento, "tipo": doc.tipo},
-            )
-        try:
-            payload = downloader(doc)
-        except Exception as exc:
-            if _is_session_expiry(exc) and hasattr(client, "_ensure_session"):
-                client._ensure_session()
-                try:
-                    payload = downloader(doc)
-                except Exception:
-                    pass
-                else:
-                    return _read_binary_payload(
-                        payload,
-                        "download_document_pdf",
-                        doc.nome,
-                    )
-            refreshed_doc, refreshed_process_id = _refresh_tree_document(
-                client,
-                doc,
-                id_documento=id_documento,
-                id_procedimento=id_procedimento,
-            )
-            if not refreshed_doc:
+    def _fingerprint(target: TreeDocument | None, process: str) -> tuple[Any, ...]:
+        if target is None:
+            return (process, None)
+        return (process, target.id_documento, target.tipo, target.src_url, target.arvore_url,
+                target.assinado, target.autenticado, target.html_content)
+
+    def _read_internal(target: TreeDocument, process: str, *, tree_html: str | None = None,
+                       allow_document_node: bool = True) -> tuple[str, str, dict[str, Any]]:
+        native_reader = getattr(client, "read_document_from_tree", None)
+        if callable(native_reader):
+            return native_reader(target, process, tree_html=tree_html,
+                                 allow_document_node=allow_document_node,
+                                 attempted_urls=attempted_urls), "read_document", {}
+        return client.read_document(target.id_documento, process), "read_document", {}
+
+    def _attempt(target: TreeDocument | None, process: str, *, tree_html: str | None = None) -> tuple[str, str, dict[str, Any]]:
+        source_error: Exception | None = None
+        if target and _usable_document_url(target.src_url) and (
+            callable(read_document_content_details) or callable(read_document_content)
+        ):
+            try:
+                attempted_urls.add(target.src_url.strip())
+                return _read_client_document(target)
+            except (SessionAccessError, httpx.HTTPError):
                 raise
-            payload = downloader(refreshed_doc)
-            doc = refreshed_doc
-            id_procedimento = refreshed_process_id
-        return _read_binary_payload(payload, "download_document_pdf", doc.nome)
+            except Exception as exc:
+                if _is_session_expiry(exc):
+                    raise SessionAccessError("Leitura interrompida por sessão/contexto inacessível; sem autenticação automática.") from exc
+                source_error = exc
+        if target and target.tipo.lower() == "interno":
+            try:
+                return _read_internal(target, process, tree_html=tree_html)
+            except (SessionAccessError, httpx.HTTPError):
+                raise
+            except Exception as exc:
+                _check_terminal(exc)
+                if source_error is not None and _classify_document_read_error(target, exc)["code"] not in restriction_codes:
+                    raise source_error from exc
+                raise
+        if target and target.tipo.lower() in {"pdf", "documento", "externo"}:
+            if source_error is not None:
+                raise source_error
+            downloader = getattr(client, "download_document", None)
+            if not callable(downloader):
+                raise ParseError("Cliente nao suporta download de documento para leitura binaria.",
+                                 details={"id_documento": id_documento, "tipo": target.tipo})
+            return _read_binary_payload(downloader(target), "download_document_pdf", target.nome)
+        if source_error is not None:
+            raise source_error
+        if callable(getattr(client, "read_document_from_tree", None)):
+            raise DocumentNotFoundError("Documento não localizado na árvore atual.", details={"id_documento": id_documento})
+        return client.read_document(id_documento, process), "read_document_fallback", {}
 
-    if last_error is not None:
-        raise last_error
-
-    return client.read_document(id_documento, id_procedimento), "read_document_fallback", {}
+    try:
+        return _attempt(doc, id_procedimento)
+    except (SessionAccessError, httpx.HTTPError):
+        raise
+    except Exception as first_error:
+        if _is_session_expiry(first_error):
+            raise SessionAccessError("Leitura interrompida por sessão/contexto inacessível; sem autenticação automática.") from first_error
+        refreshed, process, tree_html = _refresh_tree_document(
+            client, doc, id_documento=id_documento, id_procedimento=id_procedimento)
+        final_error = first_error
+        if refreshed and _fingerprint(refreshed, process) != _fingerprint(doc, id_procedimento):
+            attempted_urls.clear()  # One retry is permitted in the changed context.
+            try:
+                return _attempt(refreshed, process, tree_html=tree_html)
+            except (SessionAccessError, httpx.HTTPError):
+                raise
+            except Exception as exc:
+                _check_terminal(exc)
+                final_error = exc
+        elif refreshed and tree_html is not None and refreshed.tipo.lower() == "interno" and callable(getattr(client, "read_document_from_tree", None)):
+            # Reuse the refreshed HTML only to discover a native print/view
+            # link. Do not retry the same document-node route or navigate again.
+            try:
+                return _read_internal(refreshed, process, tree_html=tree_html, allow_document_node=False)
+            except (SessionAccessError, httpx.HTTPError):
+                raise
+            except Exception as exc:
+                _check_terminal(exc)
+                refreshed_code = _classify_document_read_error(refreshed, exc)["code"]
+                previous_code = _classify_document_read_error(refreshed, final_error)["code"]
+                if refreshed_code in restriction_codes or (
+                    previous_code == "document_url_unavailable" and refreshed_code != "document_url_unavailable"
+                ):
+                    final_error = exc
+        target = refreshed or doc
+        classified = _classify_document_read_error(target, final_error) if target else None
+        if classified and classified["code"] == "document_url_unavailable":
+            raise DocumentURLUnavailableError(
+                "Documento sem URL nativa de conteúdo no contexto atual; uma atualização contextual foi tentada.",
+                details={"id_documento": target.id_documento, "url_evidence": dict(target.url_evidence),
+                         "contextual_refreshes": 1}) from final_error
+        if classified and classified["code"] in restriction_codes:
+            raise DocumentAccessError(classified["message"], code=classified["code"], details=classified["details"]) from final_error
+        if classified and classified["code"] == "parse_error":
+            raise ParseError(classified["message"], details=classified["details"]) from final_error
+        raise final_error
 
 
 def _document_read_core(
@@ -1567,6 +1585,8 @@ def process_read(
             try:
                 docs_value = client.get_full_document_tree(id_procedimento)
                 docs = docs_value if isinstance(docs_value, list) else []
+            except (SessionAccessError, httpx.HTTPError):
+                raise
             except Exception as tree_exc:
                 # A folder expansion can fail after the root tree was loaded.
                 # Retry without lazy expansion so visible documents survive.
@@ -1660,6 +1680,16 @@ def process_read(
                     if extraction := doc_result["data"].get("document_extraction"):
                         analyzed_item["document_extraction"] = extraction
                     analyzed_documents.append(analyzed_item)
+                except (SessionAccessError, httpx.HTTPError) as exc:
+                    client._session_error = "Leitura interrompida; restauração de unidade pendente."
+                    result = _error_result(operation=operation, context={**context, "valid": False}, resolved_ids=resolved_ids, exc=exc)
+                    result["data"] = {
+                        "documents_read": analyzed_documents,
+                        "read_interrupted": True,
+                        "documents_unread": [_tree_document(item) for item in selected_docs[len(analyzed_documents):]],
+                    }
+                    result["warnings"] = warnings + ["Leitura interrompida; documentos restantes não consultados."]
+                    return result
                 except Exception as exc:
                     read_error = _classify_document_read_error(doc, exc)
                     analyzed_documents.append(
@@ -3681,12 +3711,16 @@ def relatorio_read(client: Any, numero_ou_id: str, *, id_procedimento: str | Non
                         details={"tipo": doc_meta.tipo, "id_documento": id_documento},
                     )
                 relatorio = client.read_relatorio(id_documento, id_procedimento_resolved)
+            except (SessionAccessError, httpx.HTTPError):
+                raise
             except Exception:
                 try:
                     html = client.view_document_html(id_documento, id_procedimento_resolved)
                     relatorio = parse_relatorio(html)
                     parsing_strategy = "structured_html_view"
                     extraction_method = "view_document_html"
+                except (SessionAccessError, httpx.HTTPError):
+                    raise
                 except Exception:
                     doc_payload = _document_read_core(
                         client,

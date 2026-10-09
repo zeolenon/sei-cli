@@ -3,7 +3,7 @@ from __future__ import annotations
 from sei_cli.client import SEIClient
 
 
-BASE = "https://sei.rn.gov.br"
+BASE = "https://sei.example.test"
 
 
 def _page(*, description: str, marker: str, total: int = 1, page: int = 0) -> str:
@@ -26,9 +26,9 @@ def _page(*, description: str, marker: str, total: int = 1, page: int = 0) -> st
           <td><a aria-label="{marker}" href="x?id_acompanhamento=77"></a></td>
           <td><a title="Material: Material"
                  href="/sei/controlador.php?acao=procedimento_trabalhar&amp;id_procedimento=123">
-            08810254.000239/2025-78
+            90000000.000044/2025-00
           </a></td>
-          <td>11199338702</td><td>02/09/2026 10:00:00</td>
+          <td>usuario.teste47</td><td>02/09/2026 10:00:00</td>
           <td>Material / Logística</td><td>{description}</td><td></td>
         </tr>
       </tbody></table>
@@ -71,7 +71,7 @@ def test_search_acompanhamento_matches_marker_without_opening_process() -> None:
     records = client.search_acompanhamento_especial("escada emprestada")
 
     assert len(records) == 1
-    assert records[0].numero == "08810254.000239/2025-78"
+    assert records[0].numero == "90000000.000044/2025-00"
     assert records[0].marcadores == ["Marcador / Material / Escada emprestada"]
     assert client.posts == [
         (

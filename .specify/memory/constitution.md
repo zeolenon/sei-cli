@@ -14,7 +14,7 @@ The CLI core (`sei_cli/`) is generic SEI automation. It works for **any** organi
 - `_ensure_session()` validates before every operation
 - `_harvest_hashes()` extracts `infra_hash` from every HTML response — SEI uses hashes in ALL URLs
 - Never cache hashes across sessions
-- Auto-login on session expiry with transparent retry
+- Reuse the existing session; stop on session or transport errors without automatic login. Authentication is an explicit operation.
 - Rate limit: max ~5 req/s or session drops
 - `batch_mode()` context manager for bulk operations
 
@@ -58,20 +58,20 @@ SEI HTML changes between versions and sometimes between requests. Every parser m
 ```yaml
 # Example profile
 orgao: CBM
-login_url: https://sei.rn.gov.br/sip/login.php
+login_url: https://sei.example.test/sip/login.php
 unidades:
-  - id: "110008367"
-    sigla: PABM APODI
+  - id: "910000015"
+    sigla: UNIDADE TESTE A
     default: true
-  - id: "110007087"
-    sigla: DAT CHEFIA 1ªSAT/1ºCAT
+  - id: "910000014"
+    sigla: BETA DESTINO
 marcadores_preferidos:
   - nome: Pessoal
     cor: verde
   - nome: Operacional
     cor: azul
 processos_monitorados:
-  - numero: "48122208"
+  - numero: "81000108"
     descricao: "JPMS ativo"
     alerta: true
 ```

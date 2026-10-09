@@ -99,7 +99,7 @@ def _make_client() -> SEIClient:
     return client
 
 
-def _mock_response(text: str, url: str = "https://sei.rn.gov.br/sei/arvore.php") -> MagicMock:
+def _mock_response(text: str, url: str = "https://sei.example.test/sei/arvore.php") -> MagicMock:
     """Create a mock httpx.Response."""
     r = MagicMock()
     r.text = text
@@ -127,7 +127,7 @@ class TestGiveNoticeDocument:
         # 2. the actual ciência URL (returns success redirect to arvore_visualizar)
         success_r = _mock_response(
             CIENCIA_SUCCESS_RESPONSE,
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_procedimento=12345",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_procedimento=12345",
         )
         mock_get.side_effect = [
             _mock_response(ARVORE_VIS_WITH_CIENCIA_DOC),
@@ -181,7 +181,7 @@ class TestGiveNoticeDocument:
 
         success_after_form = _mock_response(
             CIENCIA_SUCCESS_RESPONSE,
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar",
         )
         mock_get.side_effect = [
             _mock_response(ARVORE_VIS_WITH_CIENCIA_DOC),
@@ -222,7 +222,7 @@ class TestGiveNoticeDocument:
 
         success_r = _mock_response(
             CIENCIA_SUCCESS_RESPONSE,
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar",
         )
         mock_get.side_effect = [
             _mock_response(ARVORE_VIS_WITH_CIENCIA_DOC),
@@ -250,7 +250,7 @@ class TestGiveNoticeProcess:
 
         success_r = _mock_response(
             CIENCIA_SUCCESS_RESPONSE,
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_procedimento=12345",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_procedimento=12345",
         )
         # First GET: process arvore_visualizar (returns JS with linkCienciaProcesso)
         # Second GET: the actual ciência URL
@@ -298,7 +298,7 @@ var linkCienciaProcesso = 'controlador.php?acao=procedimento_ciencia&id_procedim
 
         success_r = _mock_response(
             CIENCIA_SUCCESS_RESPONSE,
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar",
         )
         # First GET: arvore_visualizar for the process root (no link found → use arvore directly)
         # But in this case there IS a proc_vis match in the arvore_html
@@ -321,7 +321,7 @@ class TestHandleCienciaResponse:
         """Response redirected to arvore_visualizar → success."""
         r = _mock_response(
             CIENCIA_SUCCESS_RESPONSE,
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id=1",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id=1",
         )
         result = self.client._handle_ciencia_response(r, "99001")
         assert result["ok"] is True
@@ -330,7 +330,7 @@ class TestHandleCienciaResponse:
         """Response redirected to procedimento_controlar → success."""
         r = _mock_response(
             CIENCIA_SUCCESS_RESPONSE,
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=procedimento_controlar",
+            url="https://sei.example.test/sei/controlador.php?acao=procedimento_controlar",
         )
         result = self.client._handle_ciencia_response(r, "12345")
         assert result["ok"] is True
@@ -339,7 +339,7 @@ class TestHandleCienciaResponse:
         """No redirect but no error → assumed success."""
         r = _mock_response(
             "<html><body><p>OK</p></body></html>",
-            url="https://sei.rn.gov.br/sei/something_else",
+            url="https://sei.example.test/sei/something_else",
         )
         result = self.client._handle_ciencia_response(r, "99001")
         assert result["ok"] is True
