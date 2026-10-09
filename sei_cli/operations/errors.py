@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from sei_cli.auth import SessionAccessError
 
 from .contracts import OperationError
 
@@ -58,6 +59,17 @@ class DocumentUnavailableError(OperationFailure):
     code = "document_unavailable_in_current_unit"
 
 
+class DocumentAccessError(OperationFailure):
+    """Preserve an explicitly reported document restriction."""
+    def __init__(self, message: str, *, code: str, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, details=details)
+        self.code = code
+
+
+class DocumentURLUnavailableError(OperationFailure):
+    code = "document_url_unavailable"
+
+
 class WorkflowViolationError(OperationFailure):
     code = "workflow_violation"
 
@@ -76,6 +88,9 @@ class UnsupportedStateError(OperationFailure):
 
 
 def error_from_exception(exc: Exception) -> OperationError:
+    if isinstance(exc, SessionAccessError):
+        return OperationError(code="session_inaccessible", message=str(exc), retryable=False, details={"automatic_login": False})
+
     if isinstance(exc, OperationFailure):
         return exc.to_error()
 

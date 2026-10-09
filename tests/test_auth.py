@@ -6,7 +6,7 @@ from sei_cli.parsers import parse_login_form
 
 
 def test_parse_login_form_extracts_action(login_html: str) -> None:
-    parsed = parse_login_form(login_html, "https://sei.rn.gov.br/sip/login.php")
+    parsed = parse_login_form(login_html, "https://sei.example.test/sip/login.php")
     assert "login.php" in parsed.action
 
 

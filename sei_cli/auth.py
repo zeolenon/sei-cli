@@ -32,7 +32,11 @@ def create_http_client() -> httpx.Client:
     )
 
 
-def _follow(client: httpx.Client, response: httpx.Response, base_url: str) -> httpx.Response:
+class SessionAccessError(RuntimeError):
+    """Existing session/context cannot be used; never implies permission to log in."""
+
+
+def _follow(client: httpx.Client, response: httpx.Response, base_url: str, *, stop_on_login: bool = False) -> httpx.Response:
     """Manually follow redirects, preserving cookies at each hop.
     
     Uses response.url as base for relative redirects, falling back to base_url.
@@ -51,6 +55,10 @@ def _follow(client: httpx.Client, response: httpx.Response, base_url: str) -> ht
         # If it still looks relative and we have a base, try that
         if not url.startswith("http"):
             url = urljoin(base_url, location)
+        if stop_on_login and ("/sip/login.php" in url or "acao=usuario_login" in url):
+            raise SessionAccessError(
+                "Sessão/contexto inacessível: redirecionamento para login; autenticação automática desativada."
+            )
         response = client.get(url)
     return response
 

@@ -24,13 +24,13 @@
 - Ao enviar, `_control_html` e invalidado para forcar recarga de contexto na proxima operacao.
 - `manter_aberto=True` marca o checkbox quando o campo existe no formulario.
 
-## Teste no processo 48182580
+## Teste no processo 81000109
 Ambiente desta execucao nao conseguiu resolver DNS para `sei.rn.gov.br` (`httpx.ConnectError: [Errno 8] nodename nor servname provided, or not known`), entao o teste online nao foi concluido aqui.
 
 ## Findings adicionais
 ### Create-Edit-Read (sem assinatura)
 - Fluxo suportado no cliente: `create_document` -> `get_editor_sections` -> `save_document` -> `read_document`.
-- O teste real no processo `48182580` nao foi executado neste ambiente pelo mesmo bloqueio de rede.
+- O teste real no processo `81000109` nao foi executado neste ambiente pelo mesmo bloqueio de rede.
 
 ### Expansao de pagina no editor
 - Em fixtures locais nao ha pagina `editor_montar` para inspecionar JS completo.
@@ -41,13 +41,13 @@ Ambiente desta execucao nao conseguiu resolver DNS para `sei.rn.gov.br` (`httpx.
 ```python
 from sei_cli.client import SEIClient
 
-ID_PROC = "48182580"
+ID_PROC = "81000109"
 
 with SEIClient() as c:
     c.login()
-    c.switch_unit("PAD - PDF")
+    c.switch_unit("BETA DESTINO")
     destinos = c.list_unidades_destino_tramitacao(ID_PROC)
     print([d.sigla for d in destinos[:10]])
-    ok = c.enviar_processo(ID_PROC, "CMDO PABM APODI", manter_aberto=True)
+    ok = c.enviar_processo(ID_PROC, "CMDO UNIDADE TESTE A", manter_aberto=True)
     print("enviado:", ok)
 ```

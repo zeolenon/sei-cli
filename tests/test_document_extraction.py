@@ -18,7 +18,7 @@ def _image_pdf() -> bytes:
     page = pdf.new_page()
     page.insert_text(
         (40, 40),
-        "Anexo (123) SEI 08810116.003584/2025-48 / pg. 1",
+        "Anexo (123) SEI 90000000.000025/2025-00 / pg. 1",
     )
     page.insert_image(fitz.Rect(40, 70, 550, 420), pixmap=image)
     output = pdf.tobytes()
@@ -30,7 +30,7 @@ def _image_pdf() -> bytes:
 def test_extracts_ocr_and_preserves_visual_artifact(monkeypatch: Any, tmp_path: Path) -> None:
     def fake_ocr(_png: bytes, *, language: str) -> tuple[str, str | None]:
         assert language == "por+eng"
-        return "Anexo (123) SEI 08810116.003584/2025-48 / pg. 1\nTexto do print", None
+        return "Anexo (123) SEI 90000000.000025/2025-00 / pg. 1\nTexto do print", None
 
     monkeypatch.setattr("sei_cli.document_extraction._ocr_png", fake_ocr)
 

@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+from html import unescape as html_module_unescape
 
 from sei_cli import auth
 from sei_cli.document_extraction import DocumentExtraction, extract_document_content
@@ -178,6 +179,7 @@ class SEIClient:
         self._editor_hiddens: dict[str, str] = {}
         self._current_unit_id: str | None = None
         # Session management
+        self._session_error: str | None = None
         self._last_login: float = 0.0
         self._batch_active: bool = False
         # infra_hash pool: acao_name -> [hash1, hash2, ...]
@@ -196,13 +198,28 @@ class SEIClient:
 
     # --- Internal HTTP helpers ---
 
+    @contextlib.contextmanager
+    def _session_navigation(self) -> Iterator[None]:
+        if getattr(self, "_session_error", None):
+            raise auth.SessionAccessError(self._session_error)
+        try:
+            yield
+        except (auth.SessionAccessError, httpx.HTTPError) as exc:
+            self._control_html = None
+            self._session_error = (
+                str(exc) if isinstance(exc, auth.SessionAccessError)
+                else "Falha de transporte; contexto não revalidado, sem autenticação automática."
+            )
+            raise
+
     def _get(self, url: str) -> httpx.Response:
-        r = self.client.get(url)
-        r = auth._follow(self.client, r, self.base_url)
-        with contextlib.suppress(Exception):
-            r.encoding = "iso-8859-1"
-        self._harvest_hashes(r.text)
-        return r
+        with self._session_navigation():
+            r = self.client.get(url)
+            r = auth._follow(self.client, r, self.base_url, stop_on_login=True)
+            with contextlib.suppress(Exception):
+                r.encoding = "iso-8859-1"
+            self._harvest_hashes(r.text)
+            return r
 
     @staticmethod
     def _sanitize_form_value_for_encoding(value: Any, encoding: str) -> str:
@@ -233,22 +250,23 @@ class SEIClient:
         SEI pages declare charset=ISO-8859-1 and expect form submissions
         in the same encoding. Using UTF-8 would corrupt accented characters.
         """
-        from urllib.parse import urlencode as _urlencode
-        sanitized_items = [
-            (key, self._sanitize_form_value_for_encoding(value, encoding))
-            for key, value in data.items()
-        ]
-        body = _urlencode(sanitized_items, encoding=encoding)
-        r = self.client.post(
-            url,
-            content=body.encode(encoding),
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        r = auth._follow(self.client, r, self.base_url)
-        with contextlib.suppress(Exception):
-            r.encoding = "iso-8859-1"
-        self._harvest_hashes(r.text)
-        return r
+        with self._session_navigation():
+            from urllib.parse import urlencode as _urlencode
+            sanitized_items = [
+                (key, self._sanitize_form_value_for_encoding(value, encoding))
+                for key, value in data.items()
+            ]
+            body = _urlencode(sanitized_items, encoding=encoding)
+            r = self.client.post(
+                url,
+                content=body.encode(encoding),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            r = auth._follow(self.client, r, self.base_url, stop_on_login=True)
+            with contextlib.suppress(Exception):
+                r.encoding = "iso-8859-1"
+            self._harvest_hashes(r.text)
+            return r
 
     def _post_pairs(
         self,
@@ -262,22 +280,23 @@ class SEIClient:
         Unlike ``_post`` (which takes a dict), this supports repeated keys
         — needed for ``<select multiple>`` fields.
         """
-        from urllib.parse import urlencode as _urlencode
-        sanitized_pairs = [
-            (key, self._sanitize_form_value_for_encoding(value, encoding))
-            for key, value in pairs
-        ]
-        body = _urlencode(sanitized_pairs, encoding=encoding)
-        r = self.client.post(
-            url,
-            content=body.encode(encoding),
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        r = auth._follow(self.client, r, self.base_url)
-        with contextlib.suppress(Exception):
-            r.encoding = "iso-8859-1"
-        self._harvest_hashes(r.text)
-        return r
+        with self._session_navigation():
+            from urllib.parse import urlencode as _urlencode
+            sanitized_pairs = [
+                (key, self._sanitize_form_value_for_encoding(value, encoding))
+                for key, value in pairs
+            ]
+            body = _urlencode(sanitized_pairs, encoding=encoding)
+            r = self.client.post(
+                url,
+                content=body.encode(encoding),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            r = auth._follow(self.client, r, self.base_url, stop_on_login=True)
+            with contextlib.suppress(Exception):
+                r.encoding = "iso-8859-1"
+            self._harvest_hashes(r.text)
+            return r
 
     def _sei_url(self, path: str) -> str:
         return f"{self.base_url}/sei/{path}"
@@ -312,7 +331,7 @@ class SEIClient:
         soup = BeautifulSoup(control_html, "lxml")
         for a in soup.find_all("a"):
             href = a.get("href", "")
-            if "procedimento_trabalhar" in href and f"id_procedimento={id_procedimento}" in href:
+            if parse_qs(urlparse(html_module_unescape(href)).query).get("acao") == ["procedimento_trabalhar"] and parse_qs(urlparse(html_module_unescape(href)).query).get("id_procedimento") == [str(id_procedimento)]:
                 return urljoin(self._sei_url(""), href)
         return None
 
@@ -335,6 +354,7 @@ class SEIClient:
             raise RuntimeError(status.message)
         self._control_html = html
         self._menu_links = parse_menu_links(html, self._sei_url(""))
+        self._session_error = None
         self._last_login = time.time()
         self._persist_session()
         return parse_system_status(html)
@@ -366,98 +386,93 @@ class SEIClient:
         redirects to the control page with fresh infra_hash values.
         Returns control page HTML on success, None on failure.
         """
-        r = self.client.get(self._sei_url("inicializar.php"))
-        if r.status_code != 302:
-            return None
-        location = r.headers.get("location", "")
-        if not location or "login.php" in location:
-            return None
-        # Resolve relative URL
-        full_url = urljoin(self._sei_url("inicializar.php"), location)
-        r2 = self.client.get(full_url)
-        if r2.status_code != 200:
-            return None
+        with self._session_navigation():
+            r = self.client.get(self._sei_url("inicializar.php"))
+            if r.status_code == 200:
+                return r.text if "frmProcedimentoControlar" in r.text else None
+            if r.status_code not in (301, 302, 303, 307, 308):
+                return None
+            location = r.headers.get("location", "")
+            if not location or "login.php" in location:
+                return None
+            # Resolve relative URL
+            r2 = auth._follow(self.client, r, self.base_url, stop_on_login=True)
+            if r2.status_code != 200:
+                return None
 
-        # Direct hit: already on the process control page
-        if "frmProcedimentoControlar" in r2.text:
-            return r2.text
+            # Direct hit: already on the process control page
+            if "frmProcedimentoControlar" in r2.text:
+                return r2.text
 
-        # SEI 4+ often lands on acao=principal (wrapper page).
-        # Extract the procedimento_controlar link with its valid infra_hash.
-        import re as _re
-        # Try iframe src first (some SEI versions embed the control page)
-        iframe_match = _re.search(
-            r'<iframe[^>]+src=["\']([^"\'>]*procedimento_controlar[^"\'>]*)["\']',
-            r2.text,
-        )
-        if iframe_match:
-            ctrl_url = urljoin(self._sei_url(""), iframe_match.group(1).replace("&amp;", "&"))
-        else:
-            # Fallback: find any procedimento_controlar link in the HTML
-            link_match = _re.search(
-                r'controlador\.php\?acao=procedimento_controlar[^"\'\'\s]*',
+            # SEI 4+ often lands on acao=principal (wrapper page).
+            # Extract the procedimento_controlar link with its valid infra_hash.
+            import re as _re
+            # Try iframe src first (some SEI versions embed the control page)
+            iframe_match = _re.search(
+                r'<iframe[^>]+src=["\']([^"\'>]*procedimento_controlar[^"\'>]*)["\']',
                 r2.text,
             )
-            if not link_match:
-                return None
-            ctrl_url = self._sei_url(link_match.group(0).replace("&amp;", "&"))
+            if iframe_match:
+                ctrl_url = urljoin(self._sei_url(""), iframe_match.group(1).replace("&amp;", "&"))
+            else:
+                # Fallback: find any procedimento_controlar link in the HTML
+                link_match = _re.search(
+                    r'controlador\.php\?acao=procedimento_controlar[^"\'\'\s]*',
+                    r2.text,
+                )
+                if not link_match:
+                    return None
+                ctrl_url = self._sei_url(link_match.group(0).replace("&amp;", "&"))
 
-        r3 = self.client.get(ctrl_url)
-        if r3.status_code == 200 and "frmProcedimentoControlar" in r3.text:
-            return r3.text
-        return None
+            r3 = self._get(ctrl_url)
+            if r3.status_code == 200 and "frmProcedimentoControlar" in r3.text:
+                return r3.text
+            return None
 
     def _ensure_session(self) -> str:
-        """Restore session with minimal overhead.
-
-        Strategy (fast → slow):
-        1. Try inicializar.php with existing cookie (~0.2s)
-        2. Full POST login as fallback (~1.5s)
-
-        After successful login, persists cookie to disk for reuse
-        by other agents/processes.
-        """
-        # Fast path: reuse existing PHPSESSID via inicializar.php
-        if self.client.cookies.get("PHPSESSID"):
+        """Reuse validated context or probe an existing session; never log in."""
+        if getattr(self, "_session_error", None):
+            raise auth.SessionAccessError(self._session_error)
+        if self._control_html and self._is_valid_control_html(self._control_html):
+            return self._control_html
+        if not self.client.cookies.get("PHPSESSID"):
+            self._session_error = "Sessão existente ausente; autenticação automática desativada."
+            raise auth.SessionAccessError(self._session_error)
+        try:
             html = self._try_inicializar()
-            if html:
-                self._control_html = html
-                self._menu_links = parse_menu_links(html, self._sei_url(""))
-                return html
-
-        # Slow path: full login (clear stale cookies first)
-        self.client.cookies.clear()
-        creds = load_credentials()
-        status, html = auth.login(self.client, creds)
-        if not status.success:
-            raise RuntimeError(status.message)
+        except auth.SessionAccessError as exc:
+            self._session_error = str(exc)
+            raise
+        if not html or not self._is_valid_control_html(html):
+            self._session_error = (
+                "Validação da sessão/contexto inconclusiva ou inacessível; cookies preservados, "
+                "sem autenticação automática."
+            )
+            raise auth.SessionAccessError(self._session_error)
         self._control_html = html
         self._menu_links = parse_menu_links(html, self._sei_url(""))
-        self._last_login = time.time()
-        self._persist_session()
+        switch_url = parse_unit_switch_link(html, self._sei_url(""))
+        if switch_url:
+            self._current_unit_id = parse_qs(urlparse(switch_url).query).get("infra_unidade_atual", [None])[0]
         return html
 
     def _ensure_control(self) -> str:
-        """Return cached control page HTML, refreshing session if needed.
-
-        KEY OPTIMIZATION: When _control_html is None (set after each
-        navigation), this now calls _ensure_session() which tries a GET
-        of the control page before falling back to full POST login.
-        This reduces ~40 re-logins per session to near zero.
-        """
-        if self._control_html:
-            if self._is_valid_control_html(self._control_html):
-                return self._control_html
-            self._control_html = None
-        return self._ensure_session()
-
-    def _fresh_control(self) -> str:
-        """Force refresh of control page (smart: GET if session valid, login if not)."""
+        """Reuse validated context, including callers with a session-only guard."""
+        if getattr(self, "_session_error", None):
+            raise auth.SessionAccessError(self._session_error)
+        if self._control_html and self._is_valid_control_html(self._control_html):
+            return self._control_html
         self._control_html = None
         return self._ensure_session()
 
+    def _fresh_control(self) -> str:
+        """Explicitly refresh existing session context without clearing cookies."""
+        self._control_html = None
+        self._session_error = None
+        return self._ensure_session()
+
     def _is_valid_control_html(self, html: str) -> bool:
-        if not html or "pwdSenha" in html or "login.php" in html:
+        if not html or BeautifulSoup(html, "lxml").find("input", attrs={"name": "pwdSenha"}):
             return False
         with contextlib.suppress(Exception):
             return parse_system_status(html).valid
@@ -465,24 +480,7 @@ class SEIClient:
 
     @contextlib.contextmanager
     def batch_mode(self) -> "Iterator[SEIClient]":
-        """Context manager for batch operations requiring session stability.
-
-        Ensures a single login at the start and keeps the session alive
-        across multiple operations. Particularly useful for reading 7+
-        documents in sequence without triggering re-logins.
-
-        Usage::
-
-            with client.batch_mode() as c:
-                for doc_id in doc_ids:
-                    c.read_relatorio(doc_id, proc_id)
-
-        Inside batch_mode:
-        - Login is performed once at entry if not already logged in
-        - _ensure_session() is called on each _ensure_control() miss
-          (fast GET, not slow POST login)
-        - Session state is restored on exit
-        """
+        """Reuse existing session context across a batch, without authentication."""
         prev_batch = self._batch_active
         self._batch_active = True
         # Ensure we have a valid session at the start
@@ -493,57 +491,15 @@ class SEIClient:
         finally:
             self._batch_active = prev_batch
 
-    def _navigate_with_retry(
-        self,
-        fn: Any,
-        *args: Any,
-        **kwargs: Any,
-    ) -> Any:
-        """Execute fn(*args, **kwargs), retrying once on session failure.
-
-        Detects session expiry by checking for login redirects or
-        'pwdSenha' indicators in HTTP responses. On first failure,
-        refreshes the session and retries. Maximum 2 attempts.
-
-        Args:
-            fn: Callable to execute.
-            *args, **kwargs: Arguments passed to fn.
-
-        Returns:
-            Result of fn(*args, **kwargs).
-
-        Raises:
-            RuntimeError: If retry also fails (re-raises original error).
-        """
-        last_exc: Exception | None = None
-        for attempt in range(2):
-            try:
-                result = fn(*args, **kwargs)
-                # Detect session expiry in HTTP response
-                if isinstance(result, httpx.Response):
-                    url_str = str(result.url)
-                    if "login.php" in url_str or "pwdSenha" in result.text:
-                        raise RuntimeError(
-                            "Session expired during navigation (login redirect detected)"
-                        )
-                return result
-            except RuntimeError as exc:
-                last_exc = exc
-                msg = str(exc).lower()
-                is_session_error = any(
-                    kw in msg
-                    for kw in (
-                        "session expired", "login", "sessão expirou",
-                        "expirou", "não encontrado na unidade",
-                    )
-                )
-                if attempt == 0 and is_session_error:
-                    # Refresh session and retry
-                    self._control_html = None
-                    self._ensure_session()
-                    continue
-                raise
-        raise last_exc  # type: ignore[misc]
+    def _navigate_with_retry(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Compatibility wrapper: session access failures stop without renewal."""
+        result = fn(*args, **kwargs)
+        if isinstance(result, httpx.Response) and (
+            "login.php" in str(result.url)
+            or BeautifulSoup(result.text, "lxml").find("input", attrs={"name": "pwdSenha"})
+        ):
+            raise auth.SessionAccessError("Sessão/contexto inacessível; sem autenticação automática.")
+        return result
 
     def _harvest_hashes(self, response_text: str) -> None:
         """Extract infra_hash values from an HTML response and cache them.
@@ -618,9 +574,6 @@ class SEIClient:
         arvore_url = urljoin(self._sei_url(""), iframe["src"])
         ra = self._get(arvore_url)
 
-        # Invalidate control page cache after navigating away
-        self._control_html = None
-
         return parse_document_tree(ra.text, base_url=self._sei_url(""))
 
     def _navigate_to_process_page(self, id_procedimento: str):
@@ -638,11 +591,10 @@ class SEIClient:
         soup = BeautifulSoup(html, "lxml")
         for a in soup.find_all("a"):
             href = a.get("href", "")
-            if "procedimento_trabalhar" in href and id_procedimento in href:
+            if parse_qs(urlparse(href).query).get("acao") == ["procedimento_trabalhar"] and parse_qs(urlparse(href).query).get("id_procedimento") == [str(id_procedimento)]:
                 proc_link = urljoin(self._sei_url(""), href)
                 r = self._get(proc_link)
                 if "ifrArvore" in r.text:
-                    self._control_html = None
                     return BeautifulSoup(r.text, "lxml")
                 break
 
@@ -651,7 +603,9 @@ class SEIClient:
             result_html = self.search(id_procedimento)
             if "ifrArvore" in result_html:
                 return BeautifulSoup(result_html, "lxml")
-        except Exception:
+        except (auth.SessionAccessError, httpx.HTTPError):
+            raise
+        except RuntimeError:
             pass
 
         return None
@@ -1526,8 +1480,15 @@ class SEIClient:
         return True
 
     def get_full_document_tree(
-        self, id_procedimento: str, *, expand_all: bool = True
+        self, id_procedimento: str, expand_all: bool = True,
     ) -> list[TreeDocument]:
+        """Return the current native tree, expanding lazy folders when requested."""
+        docs, _context = self._get_full_document_tree_context(id_procedimento, expand_all=expand_all)
+        return docs
+
+    def _get_full_document_tree_context(
+        self, id_procedimento: str, *, expand_all: bool = True
+    ) -> tuple[list[TreeDocument], str | None]:
         """Get complete document tree for a process, expanding lazy-loaded folders.
 
         Unlike get_process_documents(), this method:
@@ -1546,8 +1507,9 @@ class SEIClient:
         self._last_tree_warnings: list[str] = []
         arvore_html = self._navigate_to_arvore(id_procedimento)
         if not arvore_html:
-            return []
+            return [], None
 
+        context_parts = [arvore_html]
         all_docs: list[TreeDocument] = []
         all_signatures: dict[str, list[Any]] = {}
 
@@ -1587,6 +1549,8 @@ class SEIClient:
                         'hdnPastaAtual': folder.folder_id,
                         'hdnProtocolos': folder.protocolos,
                     })
+                except (auth.SessionAccessError, httpx.HTTPError):
+                    raise
                 except Exception as exc:
                     self._last_tree_warnings.append(
                         f"Falha ao expandir a pasta {folder.folder_id}: {exc}"
@@ -1594,6 +1558,7 @@ class SEIClient:
                     continue
 
                 if r.text.startswith('OK'):
+                    context_parts.append(r.text)
                     _merge_signatures(parse_tree_signatures(r.text))
                     folder_docs = parse_expanded_folder(
                         r.text, self._sei_url("")
@@ -1615,7 +1580,7 @@ class SEIClient:
                 doc.assinado = any(sig.kind == "assinatura" for sig in signatures)
                 doc.autenticado = any(sig.kind == "autenticacao" for sig in signatures)
 
-        return all_docs
+        return all_docs, "\n".join(context_parts)
 
     def download_document(
         self,
@@ -1636,7 +1601,7 @@ class SEIClient:
         Returns:
             bytes for PDF downloads, str for HTML documents.
         """
-        if not doc.src_url:
+        if not doc.src_url or not doc.src_url.strip() or doc.src_url.strip().casefold() == "about:blank":
             raise ValueError(
                 f"Document {doc.id_documento} ({doc.nome}) has no download URL"
             )
@@ -3351,8 +3316,30 @@ class SEIClient:
         The unit.link stores the unit ID (not a URL). We POST the switch form
         with selInfraUnidades=<unit_id> to replicate the JS selecionarUnidade().
         
-        After switching, we need a fresh login because the infra_hash changes.
+        Reuse the active unit before accessing the unit selection page.
         """
+        current_status = self.status()
+        html = self._control_html or ""
+        active_switch_url = parse_unit_switch_link(html, self._sei_url(""))
+        active_unit_id = (
+            parse_qs(urlparse(active_switch_url).query).get("infra_unidade_atual", [None])[0]
+            if active_switch_url else None
+        )
+        requested = keyword.strip().casefold()
+        active_refs = {
+            value.strip().casefold()
+            for value in (
+                current_status.unidade_sigla,
+                current_status.unidade_descricao,
+                active_unit_id,
+            )
+            if value
+        }
+        if current_status.valid and requested and requested in active_refs:
+            if active_unit_id:
+                self._current_unit_id = active_unit_id
+            return current_status
+
         # Always get a fresh control page for valid switch URL
         html = self._fresh_control()
         switch_url = parse_unit_switch_link(html, self._sei_url(""))
@@ -3390,31 +3377,29 @@ class SEIClient:
 
         r2 = self._post(post_url, data)
 
-        # After switching, the response is a confirmation page, not the control
-        # page. We need to explicitly load the control page to get process lists.
-        post_status = parse_system_status(r2.text)
+        # Reuse a returned control page only when its current unit is verified.
+        self._control_html = None
+        self._session_error = None
         self._current_unit_id = target.link
-        control_url = self._sei_url(
-            f"controlador.php?acao=procedimento_controlar"
-            f"&infra_sistema=100000100&infra_unidade_atual={target.link}"
+        post_switch_url = parse_unit_switch_link(r2.text, self._sei_url("")) if r2.text.strip() else None
+        post_unit_id = (
+            parse_qs(urlparse(post_switch_url).query).get("infra_unidade_atual", [None])[0]
+            if post_switch_url else None
         )
-        rc = self._get(control_url)
-        if self._is_valid_control_html(rc.text):
-            self._control_html = rc.text
-            self._menu_links = parse_menu_links(rc.text, self._sei_url(""))
+        if self._is_valid_control_html(r2.text) and post_unit_id == target.link:
+            self._control_html = r2.text
+            self._menu_links = parse_menu_links(r2.text, self._sei_url(""))
         else:
-            self._control_html = None
-            refreshed = self._ensure_session()
-            if self._is_valid_control_html(refreshed):
-                self._control_html = refreshed
-                self._menu_links = parse_menu_links(refreshed, self._sei_url(""))
+            self._control_html = self._fresh_control()
+        if not self._control_html:
+            raise auth.SessionAccessError("Controle da unidade selecionada não confirmado; sem autenticação automática.")
+        status = parse_system_status(self._control_html)
+        active_link = parse_unit_switch_link(self._control_html, self._sei_url("")) if self._control_html else None
+        active_id = parse_qs(urlparse(active_link).query).get("infra_unidade_atual", [None])[0] if active_link else None
+        if not status.valid or active_id != target.link:
+            raise auth.SessionAccessError("Unidade retornada não confirmada; sem autenticação automática.")
         self._persist_session()
-        control_status = parse_system_status(self._control_html or rc.text)
-        if control_status.valid:
-            return control_status
-        if post_status.valid:
-            return post_status
-        return control_status
+        return status
 
     # --- Search ---
 
@@ -3440,7 +3425,7 @@ class SEIClient:
         search_url = urljoin(self._sei_url(""), action)
 
         r = self._post(search_url, data={"txtPesquisaRapida": query})
-        self._control_html = None
+        # Preserve the validated control context within this client/task.
 
         # Check if we were redirected to a process/document page
         final_url = str(r.url)
@@ -3519,17 +3504,11 @@ class SEIClient:
     def _open_process_page(self, id_procedimento: str) -> str:
         """Navigate to process page and return the inner visualization HTML.
 
-        Uses direct URL to reach the frameset, then follows the
-        procedimento_visualizar iframe where action links live.
+        Uses the current native process link or quick-search result, then
+        follows the returned procedimento_visualizar iframe.
         """
-        # Direct URL approach — works without the process being in the list
-        self._ensure_session()
-        url = self._sei_url(
-            f"controlador.php?acao=procedimento_trabalhar"
-            f"&id_procedimento={id_procedimento}"
-        )
-        r = self._get(url)
-        outer_html = r.text
+        page = self._navigate_to_process_page(id_procedimento)
+        outer_html = str(page) if page is not None else ""
 
         if "ifrArvore" not in outer_html and "procedimento_trabalhar" not in outer_html:
             raise RuntimeError(
@@ -3823,8 +3802,7 @@ class SEIClient:
             self._menu_links = parse_menu_links(html, self._sei_url(""))
             self._persist_session()
         else:
-            # Fallback: full re-login (gets control page with correct unit)
-            self.login()
+            raise auth.SessionAccessError("Controle da unidade selecionada inacessível; sem autenticação automática.")
 
         return True
 
@@ -4048,9 +4026,8 @@ class SEIClient:
             soup = BeautifulSoup(html, "lxml")
             form = soup.find("form", id="frmProcedimentoControlar")
             if not form:
-                # Session stale — re-login to get fresh control page
-                self.login()
-                html = self._ensure_control()
+                # Refresh navigation explicitly; never authenticate implicitly.
+                html = self._fresh_control()
                 soup = BeautifulSoup(html, "lxml")
                 form = soup.find("form", id="frmProcedimentoControlar")
             if not form:
@@ -5596,40 +5573,27 @@ class SEIClient:
         return self.save_document(save_url, sections)
 
     def _view_document_html_core(
-        self, id_documento: str, arvore_html: str,
+        self, id_documento: str, arvore_html: str, *,
+        attempted_urls: set[str] | None = None,
     ) -> str:
-        """Core: extract and fetch document HTML from pre-fetched arvore."""
-        # Find the documento_imprimir_web URL with infra_hash from the tree
-        print_match = re.search(
-            rf'(controlador\.php\?acao=documento_imprimir_web[^"]*'
-            rf'id_documento={id_documento}[^"]*)',
-            arvore_html,
-        )
-
-        if not print_match:
-            # Fallback: try documento_visualizar
-            vis_match = re.search(
-                rf'(controlador\.php\?acao=documento_visualizar[^"]*'
-                rf'id_documento={id_documento}[^"]*)',
-                arvore_html,
-            )
-            if vis_match:
-                r = self._get(self._sei_url(vis_match.group(1)))
-                if "login.php" not in str(r.url):
-                    return r.text
-            raise RuntimeError(
-                f"Link de visualização não encontrado para documento {id_documento}"
-            )
-
-        r = self._get(self._sei_url(print_match.group(1)))
-
-        # Check for login redirect
-        if "login.php" in str(r.url) or "pwdSenha" in r.text:
-            raise RuntimeError(
-                "Session expired viewing document. Re-login needed."
-            )
-
-        return r.text
+        """Fetch a native print/view URL from this tree, once per read context."""
+        for action in ("documento_imprimir_web", "documento_visualizar"):
+            for match in re.finditer(
+                rf"controlador\.php\?acao={action}[^\"'\s<>]*", arvore_html,
+            ):
+                native = html_module_unescape(match.group())
+                if parse_qs(urlparse(native).query).get("id_documento") != [str(id_documento)]:
+                    continue
+                url = self._sei_url(native)
+                if attempted_urls is not None:
+                    if url in attempted_urls:
+                        continue
+                    attempted_urls.add(url)
+                response = self._get(url)
+                if "login.php" in str(response.url) or BeautifulSoup(response.text, "lxml").find("input", attrs={"name": "pwdSenha"}):
+                    raise auth.SessionAccessError("Sessão/contexto inacessível ao visualizar documento; sem autenticação automática.")
+                return response.text
+        raise RuntimeError(f"Link de visualização não encontrado para documento {id_documento}")
 
     def view_document_html(
         self, id_documento: str, id_procedimento: str
@@ -5781,9 +5745,50 @@ class SEIClient:
             for img in soup.find_all("img"):
                 img.decompose()
             return soup.get_text("\n", strip=True)
+        except (auth.SessionAccessError, httpx.HTTPError):
+            raise
         except RuntimeError:
             # Fallback: signed document — use print view
             return self.view_document(id_documento, id_procedimento)
+
+    def read_document_from_tree(
+        self, doc: TreeDocument, id_procedimento: str, *,
+        tree_html: str | None = None, allow_document_node: bool = True,
+        attempted_urls: set[str] | None = None,
+    ) -> str:
+        """Read through native print/view links, without opening the editor.
+
+        A supplied tree is local to this read. Otherwise navigate once; do not
+        rebuild the full tree or fabricate links when the descriptor is blank.
+        """
+        if tree_html is None:
+            tree_html = self._navigate_to_arvore(id_procedimento)
+        if not tree_html:
+            raise RuntimeError(f"Link de visualização não encontrado para documento {doc.id_documento}")
+        try:
+            rendered = self._view_document_html_core(doc.id_documento, tree_html, attempted_urls=attempted_urls)
+        except (auth.SessionAccessError, httpx.HTTPError):
+            raise
+        except RuntimeError as exc:
+            if "Link de visualização não encontrado" not in str(exc):
+                raise
+            native_node = (doc.arvore_url or '').strip()
+            if not allow_document_node or not native_node or native_node.casefold() == 'about:blank':
+                raise
+            if attempted_urls is not None:
+                if native_node in attempted_urls:
+                    raise
+                attempted_urls.add(native_node)
+            rendered = self._view_document_html_core(doc.id_documento, self._get(native_node).text,
+                                                     attempted_urls=attempted_urls)
+        soup = BeautifulSoup(rendered, "lxml")
+        for image in soup.find_all("img"):
+            image.decompose()
+        for tag_id in ("divInfraAreaGlobal", "navInfraBarraNavegacao"):
+            element = soup.find(id=tag_id)
+            if element:
+                element.decompose()
+        return soup.get_text("\n", strip=True)
 
     def read_relatorio(
         self, id_documento: str, id_procedimento: str
@@ -5811,6 +5816,8 @@ class SEIClient:
                 if not body_sec:
                     body_sec = max(body_candidates, key=lambda s: len(s.content))
                 body_html = body_sec.content
+        except (auth.SessionAccessError, httpx.HTTPError):
+            raise
         except RuntimeError:
             pass  # signed doc — fall through to print view
 
@@ -5839,6 +5846,8 @@ class SEIClient:
                 relatorio.assinado = True
                 relatorio.assinado_por = sig_match.group(1).strip()
                 relatorio.assinado_em = f"{sig_match.group(2)} {sig_match.group(3)}"
+        except (auth.SessionAccessError, httpx.HTTPError):
+            raise
         except Exception:
             pass  # signature check is best-effort
 
@@ -5851,9 +5860,8 @@ class SEIClient:
     ) -> dict[str, Any]:
         """Read and summarize all relatório-like documents from a process.
 
-        Uses batch_mode() to avoid repeated full re-logins between documents.
-        The session is established once at the start and refreshed via fast
-        GET requests (not POST logins) between each document read.
+        Uses batch_mode() to reuse the validated existing context.
+        Terminal session/transport failures stop without authentication.
         """
         if unit:
             self.switch_unit(unit)
@@ -6393,11 +6401,15 @@ class SEIClient:
         try:
             current_status = self.status()
             original_sigla = current_status.unidade_sigla
+        except (auth.SessionAccessError, httpx.HTTPError):
+            raise
         except Exception:
             try:
                 fresh_control = self._fresh_control()
                 current_status = parse_system_status(fresh_control)
                 original_sigla = current_status.unidade_sigla
+            except (auth.SessionAccessError, httpx.HTTPError):
+                raise
             except Exception:
                 original_sigla = None
 
@@ -6420,18 +6432,25 @@ class SEIClient:
         self.switch_unit(required)
         try:
             yield required
+        except (auth.SessionAccessError, httpx.HTTPError):
+            self._session_error = "Navegação interrompida; restauração de unidade pendente."
+            raise
         finally:
-            # Restore original unit
-            if original_sigla:
+            # Restoration requires usable context; never navigate after a terminal error.
+            if original_sigla and not getattr(self, "_session_error", None):
                 try:
                     self.switch_unit(original_sigla)
                     try:
                         restored_status = self.status()
                         restored_sigla = restored_status.unidade_sigla or ""
+                    except (auth.SessionAccessError, httpx.HTTPError):
+                        raise
                     except Exception:
                         restored_sigla = ""
                     if restored_sigla and original_sigla.casefold() not in restored_sigla.casefold():
                         self.switch_unit(original_sigla)
+                except (auth.SessionAccessError, httpx.HTTPError):
+                    raise
                 except Exception:
                     pass  # Best effort — don't mask the real exception
 
@@ -6482,66 +6501,26 @@ class SEIClient:
             return None
         arvore_url = urljoin(self._sei_url(""), iframe["src"])
         response = self._get(arvore_url)
-        self._control_html = None
         return response.text
 
     def _navigate_to_arvore(self, id_procedimento: str) -> str | None:
-        """Navigate to a process and return the best available tree HTML.
-
-        Strategy (fast → slow): direct URL, hashed process-page URL, then
-        quick search.  Unlike the old implementation, a direct tree containing
-        only inaccessible ``about:blank`` document nodes is not accepted before
-        the contextual search is attempted.
-        """
-        self._ensure_session()
-        best_html: str | None = None
-        best_quality = -1
-
-        def consider(candidate: str | None, *, stop_at: int = 50) -> str | None:
-            nonlocal best_html, best_quality
-            if not candidate:
-                return None
-            quality = self._tree_access_quality(candidate)
-            if quality > best_quality:
-                best_html = candidate
-                best_quality = quality
-            if quality >= stop_at:
-                return candidate
-            return None
-
-        # Strategy 1: direct URL
-        url = self._sei_url(
-            f"controlador.php?acao=procedimento_trabalhar"
-            f"&id_procedimento={id_procedimento}"
-        )
+        """Use current native process/tree links; never fabricate process URLs."""
+        page = self._navigate_to_process_page(id_procedimento)
+        candidate = self._arvore_from_process_page(str(page)) if page is not None else None
+        if candidate and self._tree_access_quality(candidate) >= 50:
+            return candidate
+        # The process-page helper already searched when the inbox had no link.
+        if page is None:
+            return candidate
         try:
-            direct = self._get(url)
-            candidate = self._arvore_from_process_page(direct.text)
-            if consider(candidate):
-                return candidate
-        except Exception:
-            pass
-
-        # Strategy 2: hashed process-page URL
-        try:
-            process_page = self._navigate_to_process_page(id_procedimento)
-            if process_page is not None:
-                candidate = self._arvore_from_process_page(str(process_page))
-                if consider(candidate):
-                    return candidate
-        except Exception:
-            pass
-
-        # Strategy 3: quick search, which often supplies the current unit hash
-        try:
-            result_html = self.search(id_procedimento)
-            candidate = self._arvore_from_process_page(result_html)
-            if consider(candidate):
-                return candidate
-        except Exception:
-            pass
-
-        return best_html
+            searched = self._arvore_from_process_page(self.search(id_procedimento))
+        except (auth.SessionAccessError, httpx.HTTPError):
+            raise
+        except RuntimeError:
+            return candidate
+        if searched and (not candidate or self._tree_access_quality(searched) > self._tree_access_quality(candidate)):
+            return searched
+        return candidate
 
     def _navigate_to_arvore_visualizar(self, id_procedimento: str) -> str | None:
         """Navigate from ``ifrArvore`` to the process ``arvore_visualizar`` page.
@@ -6580,45 +6559,12 @@ class SEIClient:
         r_vis = self._get(urljoin(self._sei_url(""), vis_url_raw))
         return r_vis.text
 
-    def _build_arvore_visualizar_url(
-        self,
-        id_documento: str,
-        id_procedimento: str,
-    ) -> str | None:
-        """Build an ``arvore_visualizar`` URL using the current unit context.
-
-        In forwarded processes, the tree returned by the SEI may include
-        ``about:blank`` for documents owned by the receiving/current unit when
-        the frame was rendered with another unit's context. Re-navigating to the
-        process page lets us reuse the current session's ``infra_unidade_atual``
-        and ``infra_hash`` to select the document directly.
-        """
-        url = self._sei_url(
-            f"controlador.php?acao=procedimento_trabalhar"
-            f"&id_procedimento={id_procedimento}"
-        )
-        response = self._get(url)
-        soup = BeautifulSoup(response.text, "lxml")
-        iframe = soup.find("iframe", {"name": "ifrArvore"})
-        if not iframe or not iframe.get("src"):
-            return None
-
-        arvore_src = str(iframe["src"]).replace("&amp;", "&")
-        unit_match = re.search(r"[?&]infra_unidade_atual=(\d+)", arvore_src)
-        hash_match = re.search(r"[?&]infra_hash=([A-Za-z0-9]+)", arvore_src)
-        if not unit_match or not hash_match:
-            return None
-
-        return urljoin(
-            self._sei_url(""),
-            "controlador.php?acao=arvore_visualizar"
-            "&acao_origem=arvore_inicializar"
-            f"&id_procedimento={id_procedimento}"
-            f"&id_documento={id_documento}"
-            "&infra_sistema=100000100"
-            f"&infra_unidade_atual={unit_match.group(1)}"
-            f"&infra_hash={hash_match.group(1)}",
-        )
+    def _build_arvore_visualizar_url(self, id_documento: str, id_procedimento: str) -> str | None:
+        """Compatibility helper: return only a native URL from the current tree."""
+        for doc in self.get_full_document_tree(id_procedimento, expand_all=True):
+            if doc.id_documento == id_documento and doc.arvore_url and doc.arvore_url.casefold() != "about:blank":
+                return doc.arvore_url
+        return None
 
     def _get_editor_url(
         self, id_documento: str, id_procedimento: str
@@ -6652,9 +6598,7 @@ class SEIClient:
                 if tree_doc and tree_doc.arvore_url and tree_doc.arvore_url.casefold() != "about:blank":
                     doc_url = tree_doc.arvore_url
                 else:
-                    doc_url = self._build_arvore_visualizar_url(id_documento, id_procedimento)
-                    if not doc_url:
-                        return None
+                    return None
             else:
                 doc_url = urljoin(self._sei_url(""), doc_match.group().replace("&amp;", "&"))
             rd = self._get(doc_url)
@@ -7606,7 +7550,12 @@ class SEIClient:
             content=body.encode("iso-8859-1"),
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        r = auth._follow(self.client, r, self.base_url)
+        try:
+            r = auth._follow(self.client, r, self.base_url, stop_on_login=True)
+        except auth.SessionAccessError as exc:
+            self._control_html = None
+            self._session_error = str(exc)
+            raise
         with contextlib.suppress(Exception):
             r.encoding = "iso-8859-1"
 

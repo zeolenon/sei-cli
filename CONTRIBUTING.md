@@ -75,7 +75,7 @@ Configure via variáveis de ambiente:
 export SEI_USUARIO="seu_usuario"
 export SEI_SENHA="sua_senha"
 export SEI_ORGAO="CBM"  # ou o código do seu órgão
-export SEI_LOGIN_URL="https://sei.rn.gov.br/sip/login.php"
+export SEI_LOGIN_URL="https://sei.example.test/sip/login.php"
 ```
 
 Ou via arquivo `~/.config/sei/credentials.json`:
@@ -84,7 +84,7 @@ Ou via arquivo `~/.config/sei/credentials.json`:
   "usuario": "seu_usuario",
   "senha": "sua_senha",
   "orgao": "CBM",
-  "login_url": "https://sei.rn.gov.br/sip/login.php"
+  "login_url": "https://sei.example.test/sip/login.php"
 }
 ```
 

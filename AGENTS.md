@@ -1,8 +1,8 @@
 # sei-cli — CLI HTTP para SEI (Sistema Eletrônico de Informações)
 
 ## O que é
-CLI Python read-only para interagir com o SEI (sei.rn.gov.br) via HTTP puro, sem browser.
-Faz login, lista processos, lê documentos, pesquisa — tudo via requests HTTP + HTML parsing.
+CLI Python para interagir com o SEI via HTTP puro, sem browser.
+Reutiliza a sessão existente para consultas; autenticação e mutações são operações explícitas.
 
 ## Plano completo
 Leia `docs/plan.md` para o plano detalhado com arquitetura, flows, e detalhes técnicos.
@@ -32,7 +32,7 @@ sei_cli/
 tests/
 ├── test_auth.py
 ├── test_parsers.py
-└── fixtures/       # HTML salvas do SEI real
+└── fixtures/       # HTML sintético para testes offline
 ```
 
 ## Testes

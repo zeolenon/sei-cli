@@ -1,8 +1,8 @@
 ---
 name: sei
 description: "Operar o SEI com leitura contextual e ações canônicas."
-version: 1.0.0
-author: Leo Zenon, Herminho
+version: 1.0.1
+author: SEI CLI contributors
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -11,7 +11,7 @@ metadata:
     related_skills: []
 ---
 
-Esta skill acompanha a superfície canônica do `sei-cli` 1.0.0. Os comandos
+Esta skill acompanha a superfície canônica do `sei-cli` 1.0.1. Os comandos
 abaixo devem ser executados pelo agente via `terminal`; a skill não expõe
 detalhes internos de HTTP, HTML, sessão ou autenticação.
 
@@ -124,6 +124,9 @@ Essa etapa é somente triagem de metadados: não abrir árvores, documentos ou P
   também cobre árvore lazy não expandida ou contexto limitado.
 - Não converta `origin_unit` em bloqueio automático. Documentos acessíveis na
   árvore contextual da unidade atual devem ser lidos normalmente.
+- `document_url_unavailable` informa falta de URL nativa de conteúdo no contexto consultado; não comprova restrição, minuta ou expiração da sessão. Erros desconhecidos permanecem `parse_error`, com evidência contextual quando disponível.
+- `documento.url_evidence` registra apenas presença do nó/atribuição e estados `absent`, `about_blank` ou `native`, comparados com a saída do parser; não contém URL, hash ou HTML. `about:blank` e literal vazio são ausência de URL, nunca rotas para reconstruir.
+- A leitura textual canônica usa conteúdo/visualização/impressão nativos, sem abrir o editor. Depois de uma falha não terminal, admite no máximo uma atualização contextual da árvore; só repete a leitura em descritor alterado ou link nativo novo. Não repete a mesma URL no contexto inalterado. Falha de sessão/rede tem prioridade e interrompe; restrição explícita não é substituída pelo erro neutro.
 - Se não houver árvore/documentos acessíveis, reporte o código estruturado
   retornado pela operação (`unit_access_required` ou erro de leitura), sem
   inventar conteúdo ausente.
@@ -296,23 +299,35 @@ arbitrários. A criação do contexto não faz download nem login.
 Preservar as rotas canônicas: sessão existente → `inicializar.php` → controle
 e URLs contextuais da árvore atual. Evitar `switch` redundante e pesquisa rápida
 quando o contexto atual já oferece a URL. Preferir um cliente e leituras seriais.
-`batch_mode` reutiliza contexto, mas não impede autenticação automática.
+`batch_mode`, `status` e listagens reutilizam o contexto validado do cliente,
+sem autenticação automática. `_fresh_control` é uma revalidação explícita;
+navegar por processo/árvore não exige reinicialização a cada documento.
+Falha inconclusiva preserva cookies e interrompe o cliente. Redirecionamento
+para login para antes de consultar a página de login. Login continua sendo
+uma ação explícita, sujeita à autorização do usuário.
 
-Em inventário estritamente somente leitura, `status` e listagens ainda podem
-fazer login/persistir sessão pelo fallback normal se a sessão expirar. Usar
-guardas que parem antes desse fallback; não presumir um modo read-only inexistente.
+Usar apenas URLs nativas fornecidas pelo controle, pela pesquisa atual ou
+pela árvore atual. Não montar `procedimento_trabalhar`/`arvore_visualizar`,
+não copiar hash de outra ação e não reconstruir rota de `about:blank`.
+Seleção de outra unidade aproveita controle retornado quando o ID contextual
+confirma o destino; sem essa prova usa a inicialização canônica, nunca um
+GET manual de controle. Erro terminal de sessão/rede para o lote e conserva
+os documentos já lidos; os restantes são registrados como não consultados.
+Restauração automática de unidade fica pendente se o contexto falhar.
 Abrir árvore/processo pode alterar visualização/recebimento: não executar essa
 etapa quando o escopo proíbe esses efeitos sem validação específica.
 Falha TLS deve parar antes de autenticar; não gerar relogins para tratá-la.
-O retry atual é limitado a uma repetição e não implementa backoff. Diferenciar
-expiração real, contexto incorreto e falha de navegação antes de renovar login.
+Distinguir expiração real, contexto incorreto e navegação inconclusiva;
+falha de validação não comprova expiração no servidor.
+
+
 
 
 - Nenhum valor de credencial deve ser registrado; qualquer credencial eventualmente encontrada deve aparecer somente como `[REDACTED]`.
 - Nunca copie cookies, tokens, hashes de sessão ou HTML bruto para relatórios,
   commits ou mensagens ao usuário.
 - Antes de reportar a versão, valide `sei --version`; a versão esperada desta
-  skill é `1.0.0`.
+  skill é `1.0.1`.
 
 ## Política de confirmação
 
@@ -363,7 +378,7 @@ São fluxos diferentes.
 - Se aparecer erro de releitura do tipo "documentos permanecem pendentes", rode `signature-block-review`; se `remaining_signable_total`/`signable_document_ids` zerou para os documentos selecionados, trate como assinatura aplicada.
 - Em `signature-block-review`, prefira `can_sign_for_current_user`/`signable_document_ids` para decisão operacional; `raw_can_sign` é apenas o sinal bruto da tela do SEI.
 
-Cenário de referência validado: `<unidade_origem> -> <unidade_destino>`.
+Cenário de referência validado: `CMDO UNIDADE TESTE A -> UNIDADE DESTINO TESTE`.
 
 ### 3. `process-finalize`
 
@@ -460,7 +475,7 @@ Exemplos:
 
 - `Ofício externo da SEAD - responder até 05/04`
 - `Férias Sd Vinicius - reaprazamento solicitado`
-- `Suprimento de serviços - empenho emitido`
+- `Suprimento serviços Cidade Sintética 1 - empenho emitido`
 
 ## Armadilhas importantes
 
@@ -472,13 +487,24 @@ Antes de atuar, conferir descrição completa, usuário e ID da unidade; não
 inferir códigos por sigla nem reescrever textos históricos. Marcadores e
 acompanhamentos pertencem ao contexto da unidade em que foram cadastrados.
 
+
 ### Unidade ambígua
 
 Se mais de uma unidade combinar com o texto informado, não escolher sozinho. Pedir definição do usuário.
 
 ### Troca de unidade
 
-Evitar `switch` redundante. Preferir as canônicas com preflight/restore interno.
+Verificar a unidade ativa antes de selecionar um ambiente. Se já for a unidade
+desejada, reutilizar a sessão e o contexto atual: não executar `switch`, não
+entrar novamente na tela de seleção e não renovar login para essa consulta.
+Confirmar pela sigla/descrição vigente e pelo ID contextual da unidade; um ID
+antigo no arquivo de sessão não comprova qual ambiente está ativo.
+
+Quando a unidade for diferente, usar apenas a seleção canônica autorizada.
+Se houver redirecionamento para login, parar antes de autenticar no escopo de
+sessão existente e distinguir falha de rota/contexto de expiração real. Não
+atribuir uma falha anterior à seleção redundante sem evidência que comprove a
+causa. Preferir as canônicas com preflight/restore interno quando aplicável.
 
 ### Rascunho vs documento assinado
 
@@ -494,7 +520,7 @@ Documento em rascunho pode exigir unidade dona do processo. Documento assinado �
 
 ### Sessão/login
 
-Antes de renovar login, distinguir expiração real da sessão, contexto de unidade incorreto, falha TLS e falha de navegação/rota. Corrigir a rota quando ela causar falso diagnóstico de expiração. Expiração real pode exigir autenticação no fluxo normal; em inventário somente leitura, parar antes de login ou persistência.
+Antes de renovar login, distinguir expiração real da sessão, contexto de unidade incorreto, falha TLS e falha de navegação/rota. Corrigir a rota quando ela causar falso diagnóstico de expiração. Expiração real pode exigir login explícito autorizado; em inventário somente leitura, parar antes de login ou persistência.
 
 ### Gotcha 12 — Lazy-loaded folders hide data
 

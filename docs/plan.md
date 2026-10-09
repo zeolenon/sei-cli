@@ -70,31 +70,23 @@ A política atual em `auth.create_http_client()` exige validação completa via
 `tls.create_verified_context()`: hostname, validade e caminho até raiz já
 confiável. A cadeia pública complementar está em `sei_cli/certificates/`;
 `PARTIAL_CHAIN` fica desativado. Não usar `verify=False` nem ignorar avisos TLS.
-Esse ajuste não altera rotas, cookies, persistência ou fallback de login.
+Esse ajuste de TLS é independente da política atual de sessão: consulta não faz login automático.
 
 #### WAF Bypass
 - COTIC-RN WAF bloqueia requests sem User-Agent de browser
 - Sempre enviar UA real: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36`
 
 #### Session Management (client.py)
-```python
-class SEIClient:
-    BASE = "https://sei.rn.gov.br"
-    
-    def __init__(self):
-        self.session = httpx.Client(follow_redirects=True, headers={"User-Agent": UA})
-        self.load_session()  # Tenta carregar cookies salvos
-    
-    def is_valid(self) -> bool:
-        """Testa se sessão atual é válida fazendo GET na página principal"""
-        r = self.session.get(f"{self.BASE}/sei/controlador.php?acao=procedimento_controlar")
-        return "Controle de Processos" in r.text
-    
-    def ensure_auth(self):
-        """Login se sessão expirou"""
-        if not self.is_valid():
-            self.login()
-```
+
+O cliente carrega a sessão existente e valida o contexto por inicialização
+canônica. `status()` e listagens reutilizam o controle validado; leituras seriais
+não reinicializam a sessão a cada documento. Os redirects são seguidos
+manualmente, preservando cookies e interrompendo antes da página de login.
+
+Falha de sessão ou transporte interrompe o cliente sem apagar cookies nem
+consultar credenciais. Login é uma operação explícita (`sei login`), sujeita à
+autorização do usuário. Rotas de processo/documento devem vir dos links nativos
+do controle, da pesquisa ou da árvore, sem copiar hashes de outra ação.
 
 #### HTML Parsing (parsers.py)
 ```python
@@ -115,10 +107,10 @@ class SEIClient:
 
 #### Credenciais (config.py)
 - Ler de `~/.config/sei/credentials.json` (já existe, usado pela skill atual)
-- Formato: `{"usuario": "11199338702", "senha": "...", "orgao": "CBM", "login_url": "..."}`
+- Formato: `{"usuario": "seu_usuario", "senha": "...", "orgao": "CBM", "login_url": "..."}`
 - Campo é `usuario` (não `cpf`)
 - Orgao CBM = selOrgao value "28"
-- Senha obtida via Bitwarden: `get_secret("sei")`
+- Consultar credenciais somente pelo fluxo canônico de autenticação explícita; nunca registrar valores.
 
 ### Dependências
 ```toml

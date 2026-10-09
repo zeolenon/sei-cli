@@ -1,19 +1,12 @@
-# SEI CLI — User Profile Example
-# Copy to ~/.config/sei/profile.yaml and customize
-# This file is gitignored — your data stays local
-
-orgao: CBM
-login_url: https://sei.rn.gov.br/sip/login.php
-
-# Unidades que você tem acesso
+# Synthetic profile example — customize locally; never commit your profile.
+orgao: TEST
+login_url: https://sei.example.test/sip/login.php
 unidades:
-  - id: "110008367"
-    sigla: PABM APODI
-    default: true  # unidade padrão ao logar
-  - id: "110007087"
-    sigla: DAT CHEFIA 1ªSAT/1ºCAT
-
-# Marcadores preferidos (criados automaticamente se não existirem)
+  - id: "910000001"
+    sigla: UNIDADE TESTE A
+    default: true
+  - id: "910000002"
+    sigla: BETA DESTINO
 marcadores:
   - nome: Pessoal
     cor: verde
@@ -21,19 +14,10 @@ marcadores:
     cor: azul
   - nome: Administrativo
     cor: amarelo
-
-# Processos monitorados (alertas automáticos)
 monitorados:
-  - numero: "48122208"
-    descricao: "JPMS ativo"
+  - numero: "90000000.000001/2026-00"
+    descricao: "Processo sintético de exemplo"
     alerta: true
-  - numero: "24356065"
-    descricao: "PAD ativo ST Pereira"
-    alerta: true
-
-# Grupos de acompanhamento especial
 acompanhamento:
-  - nome: "Pessoal"
-    grupo_id: "149237"
-  - nome: "Operacional"
-    grupo_id: "149238"
+  - nome: "Exemplo"
+    grupo_id: "1"

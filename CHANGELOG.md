@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.1 — Sessão reutilizada e leitura contextual (2026-10-08)
+
+- Reutiliza a sessão existente e o controle validado entre consultas, sem
+  reinicializar a navegação a cada documento nem fazer login automático.
+- Evita seleção redundante da unidade já ativa e aproveita o controle nativo
+  retornado pela seleção quando o destino é confirmado pelo SEI.
+- Interrompe o cliente em falhas de sessão ou transporte, conserva os cookies e
+  os documentos já lidos e identifica os restantes como não consultados.
+- Lê documentos internos por visualização/impressão nativas, sem abrir o editor;
+  limita a atualização contextual a uma tentativa e evita repetir a mesma URL
+  quando o contexto não mudou.
+- Interpreta nós, URLs e assinaturas da árvore com aspas simples ou duplas e
+  múltiplas instruções por linha; usa somente rotas fornecidas pelo SEI.
+- Distingue URL de conteúdo ausente, restrição explícita e erro de parsing.
+  Acrescenta `documento.url_evidence` com estados de presença, sem URLs ou hashes.
+- Atualiza documentação, skill e regressões offline de sessão, unidade e leitura.
+
 ## 1.0.0 — TLS verificado e consolidação de leitura (2026-10-03)
 
 - Substitui o bypass TLS por verificação de certificado, hostname, validade e

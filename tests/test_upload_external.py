@@ -36,7 +36,7 @@ DOC_TYPE_CHOOSER = """
 <html><body>
 <form id="frmDocumentoEscolherTipo" action="controlador.php?acao=documento_gerar&infra_hash=def">
   <input type="hidden" name="infra_sistema" value="100000100" />
-  <input type="hidden" name="infra_unidade_atual" value="110008367" />
+  <input type="hidden" name="infra_unidade_atual" value="910000015" />
   <input type="hidden" name="hdnIdSerie" value="" />
 </form>
 </body></html>
@@ -47,12 +47,12 @@ DOC_CADASTRO_FORM = """
 <html><body>
 <form id="frmDocumentoCadastro" action="controlador.php?acao=documento_gerar_salvar&infra_hash=ghi">
   <input type="hidden" name="infra_sistema" value="100000100" />
-  <input type="hidden" name="infra_unidade_atual" value="110008367" />
+  <input type="hidden" name="infra_unidade_atual" value="910000015" />
   <input type="hidden" name="hdnFlagDocumentoCadastro" value="1" />
   <input type="hidden" name="hdnIdSerie" value="-1" />
   <input type="radio" name="rdoFormato" value="N" checked />
   <input type="radio" name="rdoFormato" value="E" />
-  <input type="hidden" name="hdnIdUsuario" value="100066959" />
+  <input type="hidden" name="hdnIdUsuario" value="910000008" />
   <input type="text" name="txtDataElaboracao" value="" />
   <input type="text" name="txtDescricao" value="" />
   <input type="text" name="txtNumero" value="" />
@@ -72,13 +72,13 @@ BLOCK_DETAIL_HTML = """
   <input type="hidden" name="hdnInfraTipoPagina" value="1" />
   <table>
     <tr class="infraTrClara">
-      <td><input type="checkbox" name="chkInfraItem" value="48783546-871299" /></td>
+      <td><input type="checkbox" name="chkInfraItem" value="81000122-871299" /></td>
       <td>4</td>
-      <td>08810254.000117/2026-62</td>
-      <td><a href="#ID-48783546-871299" onclick="return infraSparklingModal('controlador.php?acao=documento_visualizar&id_documento=48783546');">40381565</a></td>
+      <td>90000000.000034/2026-00</td>
+      <td><a href="#ID-81000122-871299" onclick="return infraSparklingModal('controlador.php?acao=documento_visualizar&id_documento=81000122');">81000054</a></td>
       <td>Despacho</td>
-      <td>LEO ZENON TASSI / 2º Tenente QOEM BM</td>
-      <td><a href="#" onclick="return acaoAssinar('48783546-871299', 'controlador.php?acao=documento_assinar&id_documento=48783546&infra_hash=abc');">Assinar</a></td>
+      <td>Sintético Pessoa 05 / 2º Tenente QOEM BM</td>
+      <td><a href="#" onclick="return acaoAssinar('81000122-871299', 'controlador.php?acao=documento_assinar&id_documento=81000122&infra_hash=abc');">Assinar</a></td>
       <td><img title="Assinatura" src="ok.png" /></td>
     </tr>
   </table>
@@ -102,23 +102,23 @@ function acaoAssinar(id) {
   <input type="hidden" name="hdnInfraItensSelecionados" value="" />
   <table>
     <tr class="infraTrClara">
-      <td><input type="checkbox" name="chkInfraItem" value="48218774-871299" /></td>
+      <td><input type="checkbox" name="chkInfraItem" value="81000110-871299" /></td>
       <td>1</td>
-      <td>08810254.000117/2026-62</td>
-      <td><a href="#ID-48218774-871299" onclick="return infraSparklingModal('controlador.php?acao=documento_visualizar&id_documento=48218774');">39860248</a></td>
+      <td>90000000.000034/2026-00</td>
+      <td><a href="#ID-81000110-871299" onclick="return infraSparklingModal('controlador.php?acao=documento_visualizar&id_documento=81000110');">81000043</a></td>
       <td>Parte Genérica</td>
-      <td>LEO ZENON TASSI / 2º Tenente QOEM BM</td>
-      <td><a href="#" onclick="return acaoAssinar('48218774-871299');">Assinar</a></td>
+      <td>Sintético Pessoa 05 / 2º Tenente QOEM BM</td>
+      <td><a href="#" onclick="return acaoAssinar('81000110-871299');">Assinar</a></td>
       <td><img title="Assinatura" src="ok.png" /></td>
     </tr>
     <tr class="infraTrEscura">
-      <td><input type="checkbox" name="chkInfraItem" value="48783191-871299" /></td>
+      <td><input type="checkbox" name="chkInfraItem" value="81000121-871299" /></td>
       <td>2</td>
-      <td>08810254.000117/2026-62</td>
-      <td><a href="#ID-48783191-871299" onclick="return infraSparklingModal('controlador.php?acao=documento_visualizar&id_documento=48783191');">40381240</a></td>
+      <td>90000000.000034/2026-00</td>
+      <td><a href="#ID-81000121-871299" onclick="return infraSparklingModal('controlador.php?acao=documento_visualizar&id_documento=81000121');">81000052</a></td>
       <td>Despacho</td>
-      <td>LEO ZENON TASSI / 2º Tenente QOEM BM</td>
-      <td><a href="#" onclick="return acaoAssinar('48783191-871299', 'controlador.php?acao=documento_assinar&id_documento=48783191&infra_hash=abc');">Assinar</a></td>
+      <td>Sintético Pessoa 05 / 2º Tenente QOEM BM</td>
+      <td><a href="#" onclick="return acaoAssinar('81000121-871299', 'controlador.php?acao=documento_assinar&id_documento=81000121&infra_hash=abc');">Assinar</a></td>
       <td></td>
     </tr>
   </table>
@@ -129,8 +129,8 @@ function acaoAssinar(id) {
 BLOCK_SIGN_FORM_HTML = """
 <html><body>
 <form id="frmAssinaturas" action="controlador.php?acao=documento_assinar">
-  <input type="hidden" name="hdnIdDocumentos" value="48218774" />
-  <input type="text" name="txtUsuario" value="LEO ZENON TASSI" />
+  <input type="hidden" name="hdnIdDocumentos" value="81000110" />
+  <input type="text" name="txtUsuario" value="Sintético Pessoa 05" />
   <input type="hidden" name="hdnIdUsuario" value="123" />
   <select name="selCargoFuncao">
     <option value="2º Tenente QOEM BM" selected>2º Tenente QOEM BM</option>
@@ -153,7 +153,7 @@ PROCESS_CHOOSER_INITIAL = """
 <form id="frmProcedimentoEscolherTipo" action="controlador.php?acao=procedimento_escolher_tipo&infra_hash=abc">
   <input type="hidden" name="hdnFiltroTipoProcedimento" value="U" />
 </form>
-<a onclick="escolher(100000182)">Férias</a>
+<a onclick="escolher(910000002)">Férias</a>
 </body></html>
 """
 
@@ -162,8 +162,8 @@ PROCESS_CHOOSER_EXPANDED = """
 <form id="frmProcedimentoEscolherTipo" action="controlador.php?acao=procedimento_escolher_tipo&infra_hash=abc">
   <input type="hidden" name="hdnFiltroTipoProcedimento" value="T" />
 </form>
-<a onclick="escolher(100000182)">Férias</a>
-<a onclick="escolher(100000999)">Processo Expandido Pouco Usado</a>
+<a onclick="escolher(910000002)">Férias</a>
+<a onclick="escolher(910000005)">Processo Expandido Pouco Usado</a>
 </body></html>
 """
 
@@ -211,7 +211,7 @@ UPLOAD_SUCCESS = "abc123hash#documento.pdf#application/pdf#12345#2026-03-08 10:0
 
 # Cadastro success: SEI redirects to the new document
 CADASTRO_SUCCESS_URL = (
-    "https://sei.rn.gov.br/sei/controlador.php"
+    "https://sei.example.test/sei/controlador.php"
     "?acao=arvore_visualizar&id_documento=77777&id_procedimento=55555&infra_hash=jkl"
 )
 
@@ -219,7 +219,7 @@ CADASTRO_SUCCESS_URL = (
 def _make_client() -> SEIClient:
     """Create a SEIClient without running __init__."""
     client = SEIClient.__new__(SEIClient)
-    client.base_url = SEIClient.BASE
+    client.base_url = "https://sei.example.test"
     client._hash_pool = {}
     client._control_html = None
     client._menu_links = {}
@@ -232,7 +232,7 @@ def _make_client() -> SEIClient:
 
 def _mock_response(
     text: str,
-    url: str = "https://sei.rn.gov.br/sei/controlador.php",
+    url: str = "https://sei.example.test/sei/controlador.php",
     status: int = 200,
 ) -> MagicMock:
     r = MagicMock()
@@ -270,7 +270,7 @@ def test_save_document_posts_raw_html_and_normalizes_escaped_sections() -> None:
         ),
     ]
 
-    assert client.save_document("https://sei.rn.gov.br/sei/editor/editor_processar.php?acao=editor_salvar", sections) is True
+    assert client.save_document("https://sei.example.test/sei/editor/editor_processar.php?acao=editor_salvar", sections) is True
     assert captured["hdnInfraTipoPagina"] == "editor"
     assert captured["txaEditor_217"] == '<p class="Texto_Justificado">Cabeçalho</p>'
     assert captured["txaEditor_220"] == (
@@ -288,7 +288,7 @@ def test_edit_document_section_edits_only_target_body_and_preserves_other_sectio
 
     def fake_get_editor_sections(_id_documento: str, _id_procedimento: str):
         return (
-            "https://sei.rn.gov.br/sei/editor/editor_processar.php?acao=editor_salvar",
+            "https://sei.example.test/sei/editor/editor_processar.php?acao=editor_salvar",
             [
                 EditorSection(
                     name="txaEditor_217",
@@ -319,16 +319,16 @@ def test_edit_document_section_edits_only_target_body_and_preserves_other_sectio
     client._post = fake_post
 
     ok = client.edit_document_section(
-        "49287256",
-        "49286513",
+        "81000131",
+        "81000130",
         "220",
-        '<p class="Texto_Justificado_Recuo_Primeira_Linha">Novo corpo <strong>sem escape</strong></p>',
+        '<p class="Texto_Justificado_Recuo_Primeira_Linha">Sintético Militar 06 corpo <strong>sem escape</strong></p>',
     )
 
     assert ok is True
     assert posted["txaEditor_217"] == "<p>Template protegido</p>"
     assert posted["txaEditor_220"] == (
-        '<p class="Texto_Justificado_Recuo_Primeira_Linha">Novo corpo <strong>sem escape</strong></p>'
+        '<p class="Texto_Justificado_Recuo_Primeira_Linha">Sintético Militar 06 corpo <strong>sem escape</strong></p>'
     )
     assert posted["txaEditor_999"] == "<p>Rodapé</p>"
     assert all("&lt;" not in value and "&amp;lt;" not in value for key, value in posted.items() if key.startswith("txaEditor_"))
@@ -353,13 +353,13 @@ class TestUploadExternalDocument:
             return_value=(
                 cadastro_soup,
                 {"hdnFlagDocumentoCadastro": "1", "rdoNivelAcesso": "0"},
-                "https://sei.rn.gov.br/sei/controlador.php?acao=documento_gerar_salvar&infra_hash=ghi",
+                "https://sei.example.test/sei/controlador.php?acao=documento_gerar_salvar&infra_hash=ghi",
                 "5",
             )
         )
         response = _mock_response(
             "<html><body><script>var linkEditarConteudo = 'controlador.php?acao=editor_montar&id_documento=77777&infra_hash=ed';</script></body></html>",
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_procedimento=55555",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_procedimento=55555",
         )
         self.client._post = MagicMock(return_value=response)
         self.client._get_editor_url = MagicMock(return_value=None)
@@ -367,7 +367,7 @@ class TestUploadExternalDocument:
         created = self.client.create_document("55555", "despacho", descricao="Teste")
 
         assert created.id_documento == "77777"
-        assert created.editor_url == "https://sei.rn.gov.br/sei/controlador.php?acao=editor_montar&id_documento=77777&infra_hash=ed"
+        assert created.editor_url == "https://sei.example.test/sei/controlador.php?acao=editor_montar&id_documento=77777&infra_hash=ed"
 
     def test_create_document_uses_documento_modelo_protocol_number(self):
         cadastro_soup = BeautifulSoup(DOC_CADASTRO_FORM, "lxml")
@@ -381,13 +381,13 @@ class TestUploadExternalDocument:
                     "txtProtocoloDocumentoTextoBase": "",
                     "hdnIdDocumentoTextoBase": "",
                 },
-                "https://sei.rn.gov.br/sei/controlador.php?acao=documento_gerar_salvar&infra_hash=ghi",
+                "https://sei.example.test/sei/controlador.php?acao=documento_gerar_salvar&infra_hash=ghi",
                 "5",
             )
         )
         response = _mock_response(
             "<html><body><script>var linkEditarConteudo = 'controlador.php?acao=editor_montar&id_documento=77777&infra_hash=ed';</script></body></html>",
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_procedimento=55555",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_procedimento=55555",
         )
         self.client._post = MagicMock(return_value=response)
         self.client._get_editor_url = MagicMock(return_value=None)
@@ -396,13 +396,13 @@ class TestUploadExternalDocument:
             "55555",
             "despacho",
             texto_inicial="N",
-            documento_modelo="40842131",
+            documento_modelo="81000061",
             descricao="Teste",
         )
 
         posted = self.client._post.call_args.args[1]
         assert posted["rdoTextoInicial"] == "D"
-        assert posted["txtProtocoloDocumentoTextoBase"] == "40842131"
+        assert posted["txtProtocoloDocumentoTextoBase"] == "81000061"
         assert posted["hdnIdDocumentoTextoBase"] == ""
 
     def test_create_document_raises_when_form_is_reloaded_without_id(self):
@@ -411,13 +411,13 @@ class TestUploadExternalDocument:
             return_value=(
                 cadastro_soup,
                 {"hdnFlagDocumentoCadastro": "1", "rdoNivelAcesso": "0"},
-                "https://sei.rn.gov.br/sei/controlador.php?acao=documento_gerar_salvar&infra_hash=ghi",
+                "https://sei.example.test/sei/controlador.php?acao=documento_gerar_salvar&infra_hash=ghi",
                 "5",
             )
         )
         response = _mock_response(
             DOC_CADASTRO_FORM,
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=documento_gerar_salvar&infra_hash=ghi",
+            url="https://sei.example.test/sei/controlador.php?acao=documento_gerar_salvar&infra_hash=ghi",
         )
         self.client._post = MagicMock(return_value=response)
         self.client._get_editor_url = MagicMock(return_value=None)
@@ -536,7 +536,7 @@ class TestUploadExternalDocument:
             _mock_response(DOC_CADASTRO_FORM),
             _mock_response(
                 "<html><body>Something unexpected</body></html>",
-                url="https://sei.rn.gov.br/sei/unknown_page",
+                url="https://sei.example.test/sei/unknown_page",
             ),
         ]
         mock_follow.return_value = _mock_response(UPLOAD_SUCCESS)
@@ -694,14 +694,14 @@ class TestExecuteSignForm:
             usuario="u",
             senha="s",
             orgao="CBM",
-            login_url="https://sei.rn.gov.br",
+            login_url="https://sei.example.test",
             cargo="2º Tenente QOEM BM",
         )
         mock_orgao_to_value.return_value = "28"
 
         form = BeautifulSoup(
             '<form id="frmAssinaturas" action="controlador.php?acao=documento_assinar">'
-            '<input name="hdnIdDocumentos" value="48783546" />'
+            '<input name="hdnIdDocumentos" value="81000122" />'
             '<input name="txtUsuario" value="u" />'
             "</form>",
             "lxml",
@@ -709,7 +709,7 @@ class TestExecuteSignForm:
 
         response = _mock_response(
             '<html><body><form id="frmAssinaturas"></form></body></html>',
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=documento_assinar&id_documento=48783546",
+            url="https://sei.example.test/sei/controlador.php?acao=documento_assinar&id_documento=81000122",
         )
         self.client.client.post.return_value = response
         mock_follow.return_value = response
@@ -736,14 +736,14 @@ class TestExecuteSignForm:
             usuario="u",
             senha="s",
             orgao="CBM",
-            login_url="https://sei.rn.gov.br",
+            login_url="https://sei.example.test",
             cargo="2º Tenente QOEM BM",
         )
         mock_orgao_to_value.return_value = "28"
 
         form = BeautifulSoup(
             '<form id="frmAssinaturas" action="controlador.php?acao=documento_assinar">'
-            '<input name="hdnIdDocumentos" value="48783546" />'
+            '<input name="hdnIdDocumentos" value="81000122" />'
             '<input name="txtUsuario" value="u" />'
             "</form>",
             "lxml",
@@ -751,14 +751,14 @@ class TestExecuteSignForm:
 
         response = _mock_response(
             "<html><body>ok</body></html>",
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_documento=48783546",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_documento=81000122",
         )
         self.client.client.post.return_value = response
         mock_follow.return_value = response
 
         result = self.client._execute_sign_form(form, "<html></html>")
 
-        assert result["signed"] == ["48783546"]
+        assert result["signed"] == ["81000122"]
         assert result["errors"] == []
 
     @patch("sei_cli.client.auth._follow")
@@ -776,22 +776,22 @@ class TestExecuteSignForm:
             usuario="u",
             senha="s",
             orgao="CBM",
-            login_url="https://sei.rn.gov.br",
+            login_url="https://sei.example.test",
             cargo="2º Tenente QOEM BM",
         )
         mock_orgao_to_value.return_value = "28"
 
         form = BeautifulSoup(
             '<form id="frmAssinaturas" action="controlador.php?acao=documento_assinar">'
-            '<input name="hdnIdDocumentos" value="48783546" />'
+            '<input name="hdnIdDocumentos" value="81000122" />'
             "</form>",
             "lxml",
         ).find("form")
 
         response = _mock_response(
-            "<html><body>XDocumento 40381565 já foi assinado por &quot;LEO ZENON TASSI&quot;."
+            "<html><body>XDocumento 81000054 já foi assinado por &quot;Sintético Pessoa 05&quot;."
             "<form id=\"frmAssinaturas\"></form></body></html>",
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=documento_assinar&id_documento=48783546",
+            url="https://sei.example.test/sei/controlador.php?acao=documento_assinar&id_documento=81000122",
         )
         self.client.client.post.return_value = response
         mock_follow.return_value = response
@@ -817,22 +817,22 @@ class TestExecuteSignForm:
             usuario="u",
             senha="s",
             orgao="CBM",
-            login_url="https://sei.rn.gov.br",
+            login_url="https://sei.example.test",
             cargo="2º Tenente QOEM BM",
         )
         mock_orgao_to_value.return_value = "28"
 
         form = BeautifulSoup(
             '<form id="frmAssinaturas" action="controlador.php?acao=documento_assinar">'
-            '<input name="hdnIdDocumentos" value="40439957" />'
+            '<input name="hdnIdDocumentos" value="81000056" />'
             "</form>",
             "lxml",
         ).find("form")
 
         response = _mock_response(
-            "<html><body>Documento 40439957 não possui Tipo de Conferência informada."
+            "<html><body>Documento 81000056 não possui Tipo de Conferência informada."
             '<form id="frmAssinaturas"></form></body></html>',
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=documento_assinar&id_documento=40439957",
+            url="https://sei.example.test/sei/controlador.php?acao=documento_assinar&id_documento=81000056",
         )
         self.client.client.post.return_value = response
         mock_follow.return_value = response
@@ -858,14 +858,14 @@ class TestExecuteSignForm:
             usuario="u",
             senha="s",
             orgao="CBM",
-            login_url="https://sei.rn.gov.br",
+            login_url="https://sei.example.test",
             cargo="",
         )
         mock_orgao_to_value.return_value = "28"
 
         form = BeautifulSoup(
             '<form id="frmAssinaturas" action="controlador.php?acao=documento_assinar">'
-            '<input name="hdnIdDocumentos" value="48783546" />'
+            '<input name="hdnIdDocumentos" value="81000122" />'
             '<select name="selCargoFuncao">'
             '<option value="2º Tenente QOEM BM" selected>2º Tenente QOEM BM</option>'
             "</select>"
@@ -875,7 +875,7 @@ class TestExecuteSignForm:
 
         response = _mock_response(
             "<html><body>ok</body></html>",
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_documento=48783546",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_documento=81000122",
         )
         self.client.client.post.return_value = response
         mock_follow.return_value = response
@@ -900,14 +900,14 @@ class TestExecuteSignForm:
             usuario="u",
             senha="s",
             orgao="CBM",
-            login_url="https://sei.rn.gov.br",
+            login_url="https://sei.example.test",
             cargo="",
         )
         mock_orgao_to_value.return_value = "28"
 
         form = BeautifulSoup(
             '<form id="frmAssinaturas" action="controlador.php?acao=documento_assinar">'
-            '<input name="hdnIdDocumentos" value="48783546" />'
+            '<input name="hdnIdDocumentos" value="81000122" />'
             '<select name="selCargoFuncao">'
             '<option value="null"></option>'
             '<option value="2º Tenente QOEM BM">2º Tenente QOEM BM</option>'
@@ -918,7 +918,7 @@ class TestExecuteSignForm:
 
         response = _mock_response(
             "<html><body>ok</body></html>",
-            url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_documento=48783546",
+            url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_documento=81000122",
         )
         self.client.client.post.return_value = response
         mock_follow.return_value = response
@@ -942,12 +942,12 @@ class TestBlockDetailHelpers:
         assert len(entries) == 1
         entry = entries[0]
         assert entry["seq"] == "4"
-        assert entry["processo"] == "08810254.000117/2026-62"
-        assert entry["documento_id"] == "48783546"
-        assert entry["numero_sei"] == "40381565"
-        assert entry["numero_documento"] == "40381565"
-        assert entry["preview_url"].endswith("id_documento=48783546")
-        assert entry["sign_url"].endswith("id_documento=48783546&infra_hash=abc")
+        assert entry["processo"] == "90000000.000034/2026-00"
+        assert entry["documento_id"] == "81000122"
+        assert entry["numero_sei"] == "81000054"
+        assert entry["numero_documento"] == "81000054"
+        assert entry["preview_url"].endswith("id_documento=81000122")
+        assert entry["sign_url"].endswith("id_documento=81000122&infra_hash=abc")
         assert entry["can_sign"] is True
         assert entry["assinado"] is False
 
@@ -1020,26 +1020,18 @@ class TestBlockDetailHelpers:
         )
         self.client._get = MagicMock(return_value=_mock_response(BLOCK_PREVIEW_HTML))
 
-        content = self.client.preview_block_document("871299", "40381565")
+        content = self.client.preview_block_document("871299", "81000054")
 
         assert "Despacho de teste do bloco" in content
 
-    def test_build_arvore_visualizar_url_uses_current_unit_iframe_context(self):
-        self.client._get = MagicMock(
-            return_value=_mock_response(
-                '<iframe name="ifrArvore" src="controlador.php?acao=arvore_inicializar'
-                '&id_procedimento=49286513&infra_unidade_atual=110008367&infra_hash=abcDEF123"></iframe>'
-            )
-        )
-
-        url = self.client._build_arvore_visualizar_url("49302196", "49286513")
-
-        assert url is not None
-        assert "acao=arvore_visualizar" in url
-        assert "id_documento=49302196" in url
-        assert "id_procedimento=49286513" in url
-        assert "infra_unidade_atual=110008367" in url
-        assert "infra_hash=abcDEF123" in url
+    def test_build_arvore_visualizar_url_returns_only_native_tree_url(self):
+        native = "controlador.php?acao=arvore_visualizar&id_documento=81000132&infra_hash=native"
+        self.client.get_full_document_tree = MagicMock(return_value=[TreeDocument(
+            id_documento="81000132", nome="Solicitação", tipo="interno", arvore_url=native,
+        )])
+        self.client._get = MagicMock()
+        assert self.client._build_arvore_visualizar_url("81000132", "81000130") == native
+        self.client._get.assert_not_called()
 
     def test_get_editor_url_expands_lazy_tree_before_failing(self):
         self.client._navigate_to_arvore = MagicMock(return_value="<script></script>")
@@ -1056,26 +1048,26 @@ class TestBlockDetailHelpers:
         self.client.get_full_document_tree = MagicMock(
             return_value=[
                 TreeDocument(
-                    id_documento="49302196",
+                    id_documento="81000132",
                     nome="Solicitação",
                     tipo="interno",
-                    arvore_url="controlador.php?acao=arvore_visualizar&id_documento=49302196&infra_hash=abc",
+                    arvore_url="controlador.php?acao=arvore_visualizar&id_documento=81000132&infra_hash=abc",
                 )
             ]
         )
         self.client._get = MagicMock(
             return_value=_mock_response(
-                "var linkEditarConteudo = 'controlador.php?acao=editor_montar&id_documento=49302196&infra_hash=def';"
+                "var linkEditarConteudo = 'controlador.php?acao=editor_montar&id_documento=81000132&infra_hash=def';"
             )
         )
 
-        url = self.client._get_editor_url("49302196", "49286513")
+        url = self.client._get_editor_url("81000132", "81000130")
 
         assert url is not None
         assert "acao=editor_montar" in url
-        self.client.get_full_document_tree.assert_called_once_with("49286513", expand_all=True)
+        self.client.get_full_document_tree.assert_called_once_with("81000130", expand_all=True)
 
-    def test_get_editor_url_builds_contextual_url_for_about_blank_lazy_doc(self):
+    def test_get_editor_url_stops_without_native_url_for_about_blank_lazy_doc(self):
         self.client._navigate_to_arvore = MagicMock(return_value="<script></script>")
         self.client._auto_unit_switch = MagicMock()
 
@@ -1090,7 +1082,7 @@ class TestBlockDetailHelpers:
         self.client.get_full_document_tree = MagicMock(
             return_value=[
                 TreeDocument(
-                    id_documento="49302196",
+                    id_documento="81000132",
                     nome="Solicitação",
                     tipo="interno",
                     arvore_url="about:blank",
@@ -1098,34 +1090,34 @@ class TestBlockDetailHelpers:
             ]
         )
         self.client._build_arvore_visualizar_url = MagicMock(
-            return_value="controlador.php?acao=arvore_visualizar&id_documento=49302196&infra_hash=fresh"
+            return_value="controlador.php?acao=arvore_visualizar&id_documento=81000132&infra_hash=fresh"
         )
         self.client._get = MagicMock(
             return_value=_mock_response(
-                "var linkEditarConteudo = 'controlador.php?acao=editor_montar&id_documento=49302196&infra_hash=def';"
+                "var linkEditarConteudo = 'controlador.php?acao=editor_montar&id_documento=81000132&infra_hash=def';"
             )
         )
 
-        url = self.client._get_editor_url("49302196", "49286513")
+        url = self.client._get_editor_url("81000132", "81000130")
 
-        assert url is not None
-        assert "acao=editor_montar" in url
-        self.client._build_arvore_visualizar_url.assert_called_once_with("49302196", "49286513")
+        assert url is None
+        self.client._build_arvore_visualizar_url.assert_not_called()
+        self.client._get.assert_not_called()
 
     def test_sign_block_uses_row_specific_sign_url_for_single_index(self):
         self.client._get_block_detail_page = MagicMock(
             return_value=(
                 _mock_response(
                     BLOCK_DETAIL_HTML_MULTI,
-                    url="https://sei.rn.gov.br/sei/controlador.php?acao=rel_bloco_protocolo_listar&id_bloco=871299&infra_hash=lista",
+                    url="https://sei.example.test/sei/controlador.php?acao=rel_bloco_protocolo_listar&id_bloco=871299&infra_hash=lista",
                 ),
                 BeautifulSoup(BLOCK_DETAIL_HTML_MULTI, "lxml"),
             )
         )
         self.client._execute_sign = MagicMock(
             return_value={
-                "doc_ids": "48783191",
-                "signed": ["48783191"],
+                "doc_ids": "81000121",
+                "signed": ["81000121"],
                 "already_signed": [],
                 "errors": [],
             }
@@ -1134,18 +1126,18 @@ class TestBlockDetailHelpers:
 
         result = self.client.sign_block("871299", doc_indices=[2])
 
-        assert result["signed"] == ["48783191"]
+        assert result["signed"] == ["81000121"]
         called_url = self.client._execute_sign.call_args.args[0]
         called_doc = self.client._execute_sign.call_args.args[1]
-        assert called_url.endswith("acao=documento_assinar&id_documento=48783191&infra_hash=abc")
-        assert called_doc == "48783191"
+        assert called_url.endswith("acao=documento_assinar&id_documento=81000121&infra_hash=abc")
+        assert called_doc == "81000121"
 
     def test_sign_block_accepts_row_with_existing_signature_marker_when_sign_url_exists(self):
         self.client._get_block_detail_page = MagicMock(
             return_value=(
                 _mock_response(
                     BLOCK_DETAIL_HTML_MULTI,
-                    url="https://sei.rn.gov.br/sei/controlador.php?acao=rel_bloco_protocolo_listar&id_bloco=871299&infra_hash=lista",
+                    url="https://sei.example.test/sei/controlador.php?acao=rel_bloco_protocolo_listar&id_bloco=871299&infra_hash=lista",
                 ),
                 BeautifulSoup(BLOCK_DETAIL_HTML_MULTI, "lxml"),
             )
@@ -1153,8 +1145,8 @@ class TestBlockDetailHelpers:
         self.client._post = MagicMock(return_value=_mock_response(BLOCK_SIGN_FORM_HTML))
         self.client._execute_sign_form = MagicMock(
             return_value={
-                "doc_ids": "48218774",
-                "signed": ["48218774"],
+                "doc_ids": "81000110",
+                "signed": ["81000110"],
                 "already_signed": [],
                 "errors": [],
             }
@@ -1163,27 +1155,27 @@ class TestBlockDetailHelpers:
 
         result = self.client.sign_block("871299", doc_indices=[1])
 
-        assert result["signed"] == ["48218774"]
+        assert result["signed"] == ["81000110"]
         called_url = self.client._post.call_args.args[0]
         called_data = self.client._post.call_args.args[1]
         assert "acao=documento_assinar" in called_url
-        assert called_data["hdnInfraItemId"] == "48218774-871299"
-        assert called_data["hdnInfraItensSelecionados"] == "48218774-871299"
+        assert called_data["hdnInfraItemId"] == "81000110-871299"
+        assert called_data["hdnInfraItensSelecionados"] == "81000110-871299"
 
     def test_sign_block_accepts_verification_when_document_is_no_longer_signable(self):
         self.client._get_block_detail_page = MagicMock(
             return_value=(
                 _mock_response(
                     BLOCK_DETAIL_HTML_MULTI,
-                    url="https://sei.rn.gov.br/sei/controlador.php?acao=rel_bloco_protocolo_listar&id_bloco=871299&infra_hash=lista",
+                    url="https://sei.example.test/sei/controlador.php?acao=rel_bloco_protocolo_listar&id_bloco=871299&infra_hash=lista",
                 ),
                 BeautifulSoup(BLOCK_DETAIL_HTML_MULTI, "lxml"),
             )
         )
         self.client._execute_sign = MagicMock(
             return_value={
-                "doc_ids": "48783191",
-                "signed": ["48783191"],
+                "doc_ids": "81000121",
+                "signed": ["81000121"],
                 "already_signed": [],
                 "errors": [],
             }
@@ -1192,11 +1184,11 @@ class TestBlockDetailHelpers:
             return_value=[
                 BlockDocument(
                     seq="2",
-                    processo="08810254.000117/2026-62",
-                    documento_id="48783191",
+                    processo="90000000.000034/2026-00",
+                    documento_id="81000121",
                     tipo_documento="Despacho",
-                    numero_sei="40381240",
-                    numero_documento="40381240",
+                    numero_sei="81000052",
+                    numero_documento="81000052",
                     assinado=False,
                     can_sign=False,
                 )
@@ -1206,14 +1198,14 @@ class TestBlockDetailHelpers:
         result = self.client.sign_block("871299", doc_indices=[2])
 
         assert result["errors"] == []
-        assert "48783191" in result["signed"]
+        assert "81000121" in result["signed"]
         assert result["post_verification"]["remaining_signable_refs"] == []
 
     def test_sign_or_authenticate_recovers_when_form_returns_but_document_is_signed(self):
         from sei_cli.models import TreeDocument
 
         self.client._navigate_to_arvore = MagicMock(
-            return_value='controlador.php?acao=arvore_visualizar&id_documento=48783191&id_procedimento=55555'
+            return_value='controlador.php?acao=arvore_visualizar&id_documento=81000121&id_procedimento=55555'
         )
 
         class _UnitGuard:
@@ -1226,12 +1218,12 @@ class TestBlockDetailHelpers:
         self.client._auto_unit_switch = MagicMock(return_value=_UnitGuard())
         self.client._get = MagicMock(
             return_value=_mock_response(
-                "<html><script>var linkAssinarDocumento = 'controlador.php?acao=documento_assinar&id_documento=48783191&infra_hash=abc';</script></html>"
+                "<html><script>var linkAssinarDocumento = 'controlador.php?acao=documento_assinar&id_documento=81000121&infra_hash=abc';</script></html>"
             )
         )
         self.client._execute_sign = MagicMock(
             return_value={
-                "doc_ids": "48783191",
+                "doc_ids": "81000121",
                 "signed": [],
                 "already_signed": [],
                 "errors": ["SEI retornou ao formulário de assinatura sem confirmar a operação."],
@@ -1241,7 +1233,7 @@ class TestBlockDetailHelpers:
         self.client.get_full_document_tree = MagicMock(
             return_value=[
                 TreeDocument(
-                    id_documento="48783191",
+                    id_documento="81000121",
                     nome="Despacho",
                     tipo="interno",
                     assinado=False,
@@ -1252,9 +1244,9 @@ class TestBlockDetailHelpers:
             return_value="<html><body>Documento assinado eletronicamente por Fulano</body></html>"
         )
 
-        result = self.client.sign_document("48783191", "55555")
+        result = self.client.sign_document("81000121", "55555")
 
-        assert result["signed"] == ["48783191"]
+        assert result["signed"] == ["81000121"]
         assert result["errors"] == []
         assert result["post_verification"]["tree"]["verified"] is False
         assert result["post_verification"]["fallback"]["verified"] is True
@@ -1263,7 +1255,7 @@ class TestBlockDetailHelpers:
         from sei_cli.models import SignatureInfo, TreeDocument
 
         self.client._navigate_to_arvore = MagicMock(
-            return_value='controlador.php?acao=arvore_visualizar&id_documento=48783191&id_procedimento=55555'
+            return_value='controlador.php?acao=arvore_visualizar&id_documento=81000121&id_procedimento=55555'
         )
 
         class _UnitGuard:
@@ -1276,12 +1268,12 @@ class TestBlockDetailHelpers:
         self.client._auto_unit_switch = MagicMock(return_value=_UnitGuard())
         self.client._get = MagicMock(
             return_value=_mock_response(
-                "<html><script>var linkAssinarDocumento = 'controlador.php?acao=documento_assinar&id_documento=48783191&infra_hash=abc';</script></html>"
+                "<html><script>var linkAssinarDocumento = 'controlador.php?acao=documento_assinar&id_documento=81000121&infra_hash=abc';</script></html>"
             )
         )
         self.client._execute_sign = MagicMock(
             return_value={
-                "doc_ids": "48783191",
+                "doc_ids": "81000121",
                 "signed": [],
                 "already_signed": [],
                 "errors": ["SEI retornou ao formulário de assinatura sem confirmar a operação."],
@@ -1291,13 +1283,13 @@ class TestBlockDetailHelpers:
         self.client.get_full_document_tree = MagicMock(
             return_value=[
                 TreeDocument(
-                    id_documento="48783191",
+                    id_documento="81000121",
                     nome="Despacho",
                     tipo="interno",
                     assinado=True,
                     assinaturas=[
                         SignatureInfo(
-                            signer="LEO ZENON TASSI",
+                            signer="Sintético Pessoa 05",
                             role="2º Tenente QOEM BM",
                             unit="CBM",
                             kind="assinatura",
@@ -1309,9 +1301,9 @@ class TestBlockDetailHelpers:
         )
         self.client.view_document_html = MagicMock()
 
-        result = self.client.sign_document("48783191", "55555")
+        result = self.client.sign_document("81000121", "55555")
 
-        assert result["signed"] == ["48783191"]
+        assert result["signed"] == ["81000121"]
         assert result["errors"] == []
         assert result["post_verification"]["tree"]["verified"] is True
         self.client.view_document_html.assert_not_called()
@@ -1334,39 +1326,39 @@ class TestBlockDetailHelpers:
         self.client.get_full_document_tree = MagicMock(
             return_value=[
                 TreeDocument(
-                    id_documento="48783191",
+                    id_documento="81000121",
                     nome="Despacho",
                     tipo="interno",
-                    arvore_url="https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_documento=48783191&id_procedimento=55555&infra_hash=expanded",
+                    arvore_url="https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_documento=81000121&id_procedimento=55555&infra_hash=expanded",
                     assinado=False,
                 )
             ]
         )
         self.client._get = MagicMock(
             return_value=_mock_response(
-                "<html><script>var linkAssinarDocumento = 'controlador.php?acao=documento_assinar&id_documento=48783191&infra_hash=abc';</script></html>"
+                "<html><script>var linkAssinarDocumento = 'controlador.php?acao=documento_assinar&id_documento=81000121&infra_hash=abc';</script></html>"
             )
         )
         self.client._execute_sign = MagicMock(
             return_value={
-                "doc_ids": "48783191",
-                "signed": ["48783191"],
+                "doc_ids": "81000121",
+                "signed": ["81000121"],
                 "already_signed": [],
                 "errors": [],
             }
         )
 
-        result = self.client.sign_document("48783191", "55555")
+        result = self.client.sign_document("81000121", "55555")
 
-        assert result["signed"] == ["48783191"]
+        assert result["signed"] == ["81000121"]
         called_url = self.client._get.call_args.args[0]
-        assert called_url == "https://sei.rn.gov.br/sei/controlador.php?acao=arvore_visualizar&id_documento=48783191&id_procedimento=55555&infra_hash=expanded"
+        assert called_url == "https://sei.example.test/sei/controlador.php?acao=arvore_visualizar&id_documento=81000121&id_procedimento=55555&infra_hash=expanded"
 
     def test_authenticate_document_prefers_tree_post_verification_for_authentication(self):
         from sei_cli.models import SignatureInfo, TreeDocument
 
         self.client._navigate_to_arvore = MagicMock(
-            return_value='controlador.php?acao=arvore_visualizar&id_documento=48783546&id_procedimento=55555'
+            return_value='controlador.php?acao=arvore_visualizar&id_documento=81000122&id_procedimento=55555'
         )
 
         class _UnitGuard:
@@ -1379,12 +1371,12 @@ class TestBlockDetailHelpers:
         self.client._auto_unit_switch = MagicMock(return_value=_UnitGuard())
         self.client._get = MagicMock(
             return_value=_mock_response(
-                "<html><script>var linkAssinarDocumento = 'controlador.php?acao=documento_assinar&id_documento=48783546&infra_hash=abc';</script></html>"
+                "<html><script>var linkAssinarDocumento = 'controlador.php?acao=documento_assinar&id_documento=81000122&infra_hash=abc';</script></html>"
             )
         )
         self.client._execute_sign = MagicMock(
             return_value={
-                "doc_ids": "48783546",
+                "doc_ids": "81000122",
                 "signed": [],
                 "already_signed": [],
                 "errors": ["SEI retornou ao formulário de assinatura sem confirmar a operação."],
@@ -1394,13 +1386,13 @@ class TestBlockDetailHelpers:
         self.client.get_full_document_tree = MagicMock(
             return_value=[
                 TreeDocument(
-                    id_documento="48783546",
+                    id_documento="81000122",
                     nome="Documento Externo",
                     tipo="pdf",
                     autenticado=True,
                     assinaturas=[
                         SignatureInfo(
-                            signer="LEO ZENON TASSI",
+                            signer="Sintético Pessoa 05",
                             role="2º Tenente QOEM BM",
                             unit="CBM",
                             kind="autenticacao",
@@ -1412,9 +1404,9 @@ class TestBlockDetailHelpers:
         )
         self.client.view_document_html = MagicMock()
 
-        result = self.client.authenticate_document("48783546", "55555")
+        result = self.client.authenticate_document("81000122", "55555")
 
-        assert result["signed"] == ["48783546"]
+        assert result["signed"] == ["81000122"]
         assert result["errors"] == []
         assert result["post_verification"]["tree"]["verified"] is True
         self.client.view_document_html.assert_not_called()
@@ -1427,10 +1419,10 @@ class TestTryInicializar:
         self.client.client = MagicMock()
 
     def test_try_inicializar_follows_principal_iframe_to_control(self):
-        r1 = _mock_response("", url="https://sei.rn.gov.br/sei/inicializar.php", status=302)
+        r1 = _mock_response("", url="https://sei.example.test/sei/inicializar.php", status=302)
         r1.headers = {"location": "controlador.php?acao=principal&infra_hash=abc"}
-        r2 = _mock_response(PRINCIPAL_WRAPPER_HTML, url="https://sei.rn.gov.br/sei/controlador.php?acao=principal&infra_hash=abc")
-        r3 = _mock_response(CONTROL_HTML, url="https://sei.rn.gov.br/sei/controlador.php?acao=procedimento_controlar&infra_hash=xyz")
+        r2 = _mock_response(PRINCIPAL_WRAPPER_HTML, url="https://sei.example.test/sei/controlador.php?acao=principal&infra_hash=abc")
+        r3 = _mock_response(CONTROL_HTML, url="https://sei.example.test/sei/controlador.php?acao=procedimento_controlar&infra_hash=xyz")
         self.client.client.get.side_effect = [r1, r2, r3]
 
         html = self.client._try_inicializar()
@@ -1446,12 +1438,12 @@ class TestPostEncodingSanitization:
 
     @patch("sei_cli.client.auth._follow")
     def test_post_sanitizes_non_latin1_punctuation(self, mock_follow):
-        response = _mock_response("<html></html>", url="https://sei.rn.gov.br/sei/controlador.php?acao=x")
+        response = _mock_response("<html></html>", url="https://sei.example.test/sei/controlador.php?acao=x")
         self.client.client.post.return_value = response
         mock_follow.return_value = response
 
         self.client._post(
-            "https://sei.rn.gov.br/sei/controlador.php?acao=x",
+            "https://sei.example.test/sei/controlador.php?acao=x",
             {"txtTexto": "Calendário \u2014 curso \u201cSAT\u201d"},
         )
 
@@ -1463,12 +1455,12 @@ class TestPostEncodingSanitization:
 
     @patch("sei_cli.client.auth._follow")
     def test_post_pairs_sanitizes_non_latin1_punctuation(self, mock_follow):
-        response = _mock_response("<html></html>", url="https://sei.rn.gov.br/sei/controlador.php?acao=x")
+        response = _mock_response("<html></html>", url="https://sei.example.test/sei/controlador.php?acao=x")
         self.client.client.post.return_value = response
         mock_follow.return_value = response
 
         self.client._post_pairs(
-            "https://sei.rn.gov.br/sei/controlador.php?acao=x",
+            "https://sei.example.test/sei/controlador.php?acao=x",
             [("selTexto", "Ofício Externo — responder até amanhã")],
         )
 

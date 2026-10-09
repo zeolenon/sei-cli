@@ -9,7 +9,7 @@ def test_sei_skill_metadata_and_operational_guards() -> None:
     assert content.startswith("---\n")
     assert "\n---\n" in content
     assert "name: sei\n" in content
-    assert "version: 1.0.0\n" in content
+    assert "version: 1.0.1\n" in content
     assert "license: MIT\n" in content
     assert "platforms: [linux, macos, windows]\n" in content
     assert "description: \"Operar o SEI com leitura contextual e ações canônicas.\"" in content

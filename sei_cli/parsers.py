@@ -82,13 +82,12 @@ def _decode_js_string(token: str) -> str:
 def parse_tree_signatures(content: str) -> dict[str, list[SignatureInfo]]:
     signatures: dict[str, list[SignatureInfo]] = {}
 
-    for raw_line in content.splitlines():
-        line = raw_line.strip()
-        if "NosAcoes[" not in line or "new infraArvoreAcao(" not in line:
-            continue
-        match = re.match(r"NosAcoes\[\d+\]\s*=\s*new\s+infraArvoreAcao\((.*)\);\s*$", line)
-        if not match:
-            continue
+    quoted = r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"
+    pattern = re.compile(
+        rf"\bNosAcoes\[\d+\]\s*=\s*new\s+infraArvoreAcao\(((?:{quoted}|[^'\"])*?)\)\s*;?",
+        re.DOTALL,
+    )
+    for match in pattern.finditer(content):
         args = _split_js_args(match.group(1))
         if len(args) < 7:
             continue
@@ -393,6 +392,16 @@ def parse_tree_folders(content: str) -> list[TreeFolder]:
     return folders
 
 
+def _tree_url_state(value: str | None) -> str:
+    value = (value or '').strip()
+    return 'absent' if not value else 'about_blank' if value.casefold() == 'about:blank' else 'native'
+
+
+def _native_tree_url(value: str | None, base_url: str) -> str | None:
+    """Resolve only a supplied nonblank literal; never fabricate a route."""
+    return urljoin(base_url, value.strip()) if _tree_url_state(value) == 'native' else None
+
+
 def parse_expanded_folder(content: str, base_url: str = '') -> list[TreeDocument]:
     """Parse the AJAX response from expanding a lazy-loaded folder.
 
@@ -414,68 +423,43 @@ def parse_expanded_folder(content: str, base_url: str = '') -> list[TreeDocument
     ):
         _ug_id, doc_id, description, unit = match.groups()
         origin_map[doc_id] = (unit or None, description or None)
-    lines = content.split('\n')
-
-    # Parse all Nos[N] definitions and their .src/.html assignments
+    # Match JS statements rather than entire lines: SEI may emit several
+    # assignments on one line and either quoting style. Never evaluate JS.
+    quoted = r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"
+    node_pattern = re.compile(
+        rf"\bNos\[(\d+)\]\s*=\s*new\s+infraArvoreNo\(((?:{quoted}|[^'\"])*?)\)\s*;?",
+        re.DOTALL,
+    )
     nodes: dict[int, dict] = {}
-
-    for line in lines:
-        line = line.strip()
-        if not line:
+    for match in node_pattern.finditer(content):
+        idx = int(match.group(1))
+        params = [_decode_js_string(arg) for arg in _split_js_args(match.group(2))]
+        if len(params) < 6:
             continue
+        node = nodes.setdefault(idx, {})
+        node.update(tipo_raw=params[0], id=params[1], parent=params[2],
+                    arvore_url=params[3], target=params[4], nome=params[5],
+                    label=params[6] if len(params) > 6 else params[5])
+        icon = params[7] if len(params) > 7 else ''
+        node['icon'] = icon
+        node['tipo'] = ('pdf' if 'documento_pdf' in icon else
+                        'externo' if 'documento_externo' in icon else
+                        'interno' if 'documento_interno' in icon else 'documento')
+        sei_match = re.search(r'\((\d+)\)$', params[5]) or re.search(r'\s(\d{8,})$', params[5])
+        if sei_match:
+            node['sei_number'] = sei_match.group(1)
 
-        # Match node creation: Nos[N] = new infraArvoreNo(...)
-        m = re.match(r'Nos\[(\d+)\]\s*=\s*new\s+infraArvoreNo\((.+)\);?$', line)
-        if m:
-            idx = int(m.group(1))
-            params = re.findall(r'"([^"]*)"', m.group(2))
-            if len(params) >= 6:
-                nodes.setdefault(idx, {})
-                nodes[idx]['tipo_raw'] = params[0]
-                nodes[idx]['id'] = params[1]
-                nodes[idx]['parent'] = params[2]
-                nodes[idx]['arvore_url'] = params[3]
-                nodes[idx]['target'] = params[4]
-                nodes[idx]['nome'] = params[5]
-                nodes[idx]['label'] = params[6] if len(params) > 6 else params[5]
-                # Detect type from icon (also store for signed detection)
-                icon = params[7] if len(params) > 7 else ''
-                nodes[idx]['icon'] = icon
-                if 'documento_pdf' in icon:
-                    nodes[idx]['tipo'] = 'pdf'
-                elif 'documento_externo' in icon:
-                    nodes[idx]['tipo'] = 'externo'
-                elif 'documento_interno' in icon:
-                    nodes[idx]['tipo'] = 'interno'
-                else:
-                    nodes[idx]['tipo'] = 'documento'
-                # Extract SEI number from name (e.g. "Despacho 35516263")
-                sei_m = re.search(r'\((\d+)\)$', params[5])
-                if sei_m:
-                    nodes[idx]['sei_number'] = sei_m.group(1)
-                else:
-                    sei_m2 = re.search(r'\s(\d{8,})$', params[5])
-                    if sei_m2:
-                        nodes[idx]['sei_number'] = sei_m2.group(1)
-            continue
-
-        # Match .src assignment
-        m = re.match(r"Nos\[(\d+)\]\.src\s*=\s*'([^']+)';?$", line)
-        if m:
-            idx = int(m.group(1))
-            nodes.setdefault(idx, {})
-            nodes[idx]['src_url'] = m.group(2)
-            continue
-
-        # Match .html assignment (can be multi-line, but usually single)
-        m = re.match(r"Nos\[(\d+)\]\.html\s*=\s*'(.*?)';?$", line)
-        if m:
-            idx = int(m.group(1))
-            nodes.setdefault(idx, {})
-            html_val = m.group(2)
-            if html_val:
-                nodes[idx]['html_content'] = html_val
-            continue
+    assignment_pattern = re.compile(
+        rf"\bNos\[(\d+)\]\.(src|html)\s*=\s*({quoted})\s*;?",
+        re.DOTALL,
+    )
+    for match in assignment_pattern.finditer(content):
+        node = nodes.setdefault(int(match.group(1)), {})
+        value = _decode_js_string(match.group(3))
+        if match.group(2) == 'src':
+            node['src_url'] = value
+        elif value:
+            node['html_content'] = value
 
     for idx in sorted(nodes.keys()):
         node = nodes[idx]
@@ -509,8 +493,8 @@ def parse_expanded_folder(content: str, base_url: str = '') -> list[TreeDocument
             nome=nome_clean,
             tipo=node.get('tipo', 'documento'),
             parent_folder=node.get('parent', ''),
-            arvore_url=urljoin(base_url, node['arvore_url']) if node.get('arvore_url') else None,
-            src_url=urljoin(base_url, node['src_url']) if node.get('src_url') else None,
+            arvore_url=_native_tree_url(node.get('arvore_url'), base_url),
+            src_url=_native_tree_url(node.get('src_url'), base_url),
             html_content=node.get('html_content'),
             sei_number=sei_number,
             origin_unit=origin_unit,
@@ -518,6 +502,14 @@ def parse_expanded_folder(content: str, base_url: str = '') -> list[TreeDocument
             assinado=assinado,
             autenticado=autenticado,
             assinaturas=assinaturas,
+            url_evidence={
+                'node_present': True,
+                'src_assignment_present': 'src_url' in node,
+                'src_literal_state': _tree_url_state(node.get('src_url')),
+                'tree_literal_state': _tree_url_state(node.get('arvore_url')),
+                'parsed_src_present': bool(_native_tree_url(node.get('src_url'), base_url)),
+                'parsed_tree_present': bool(_native_tree_url(node.get('arvore_url'), base_url)),
+            },
         ))
 
     return docs

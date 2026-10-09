@@ -16,13 +16,15 @@ completar a cadeia do servidor, sem desativar a validação TLS ou instalar
 raízes no sistema. Não há download de certificados durante a execução.
 
 A navegação, o User-Agent e o fluxo de sessão continuam canônicos. Comandos de
-consulta podem renovar/autenticar a sessão no fallback normal; abrir processos
-pode alterar visualização ou recebimento. A versão 1.0.0 não cria um modo
-estritamente somente leitura, um monitor ou autorização para ações oficiais.
+consulta reutilizam a sessão existente e o contexto validado, sem login
+automático. Falhas de sessão ou transporte interrompem a consulta; autenticar
+continua sendo uma ação explícita. Abrir processos pode alterar visualização ou
+recebimento. A ferramenta não cria um modo estritamente somente leitura, um
+monitor ou autorização para ações oficiais.
 
 ## Versão e instalação
 
-A versão atual é **1.0.0**.
+A versão atual é **1.0.1**.
 
 Com `uv`:
 
@@ -38,7 +40,7 @@ python -m pip install -e .
 sei --version
 ```
 
-A saída esperada da versão é equivalente a `sei, version 1.0.0`. O projeto
+A saída esperada da versão é equivalente a `sei, version 1.0.1`. O projeto
 publica wheel e source distribution com a mesma versão declarada em
 `pyproject.toml` e `sei_cli.__version__`.
 

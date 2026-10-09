@@ -293,7 +293,7 @@ Regras:
 - para documento, `{id_interno}` e o `id_documento` da arvore/process-read
 - para processo, `{id_interno}` e o `id_procedimento` resolvido
 - `{numero_visivel}` e o numero que aparece para o usuario, por exemplo
-  `40715880` ou `08810105.000066/2026-82`
+  `81000060` ou `90000000.000015/2026-00`
 - nunca use `href="https://sei...controlador.php?..."` em documento interno:
   isso pode abrir fora da sessao/unidade atual e provocar tela de login
 - deixe o texto narrativo fora da ancora: `Portaria-SEI ... (` + link +
@@ -685,8 +685,8 @@ Comportamento:
 Exemplo:
 
 ```bash
-sei process-archive-preview 08810254.000138/2026-88 --group "Concluídos" --json
-sei process-archive-confirm 08810254.000138/2026-88 --group "Concluídos" --confirm --json
+sei process-archive-preview 90000000.000036/2026-00 --group "Concluídos" --json
+sei process-archive-confirm 90000000.000036/2026-00 --group "Concluídos" --confirm --json
 ```
 
 ### Riscos a tratar desde o inicio
@@ -858,10 +858,10 @@ Toda operacao canonica deve expor um contrato estavel com esta estrutura:
     "usuario": "Fulano"
   },
   "resolved_ids": {
-    "numero_processo": "08810058.000128/2026-69",
-    "id_procedimento": "47607237",
-    "numero_documento": "39860248",
-    "id_documento": "48568466"
+    "numero_processo": "90000000.000007/2026-00",
+    "id_procedimento": "81000097",
+    "numero_documento": "81000043",
+    "id_documento": "81000115"
   },
   "data": {},
   "next_actions": [
@@ -892,7 +892,7 @@ Toda operacao canonica deve expor um contrato estavel com esta estrutura:
 ```json
 {
   "code": "document_not_found",
-  "message": "Documento 39860248 nao encontrado na unidade atual.",
+  "message": "Documento 81000043 nao encontrado na unidade atual.",
   "retryable": false,
   "details": {}
 }
